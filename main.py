@@ -9,30 +9,31 @@ for i in range(n_zones):
 
 """
 def build_OD(n_zones, cycles=False):
-    #define OD_matrix with closed network constraints
+    #define OD_matrix with closed network constraint
     OD_matrix=np.zeros((n_zones,n_zones))
     for i in range(n_zones):
-        if not cycles: #no cycles
-            transitions=np.random.randint(100, size=n_zones-1)
-            transitions=np.round(transitions/np.sum(transitions),2)
+        if not cycles: #with no cycles
+            transitions=np.random.randint(100, size=n_zones-1) #random transitions vector
+            transitions=np.round(transitions/np.sum(transitions),2) #normalized transitions vector
             pos=0
-            for j in range(n_zones):
+            for j in range(n_zones): #assign transition probabilities to non diagonal entries
                 if j!=i:
                     OD_matrix[i,j]=transitions[pos]
                     pos+=1
         else: #with cycles
+            #assign normalized transitions vector to OD row
             transitions=np.random.randint(100, size=n_zones)
             transitions=np.round(transitions/np.sum(transitions),2)
             OD_matrix[i]=transitions
     return OD_matrix
 
 def compute_fluxes(n_zones, OD_matrix, service_rates, normalized=True):
-    lambda_vec=np.ones((n_zones))
+    lambda_vec=np.ones((n_zones)) #initialize vector of flows
     num_it=0
     iterate=True
     while iterate:
-        flows=np.dot(lambda_vec,OD_matrix)
-        if (abs(flows-lambda_vec)>10e-8).any():
+        flows=np.dot(lambda_vec,OD_matrix) #compute vector of flows
+        if (abs(flows-lambda_vec)>10e-8).any(): #check on convergence
             lambda_vec=flows
             num_it+=1
         else:
@@ -43,22 +44,6 @@ def compute_fluxes(n_zones, OD_matrix, service_rates, normalized=True):
         flows=flows_normalized
     return flows
 
-"""
-#Convolution algorithm for Normalization coefficient
-t0=time.time()
-g=np.zeros((n_vehicles+1,n_zones))
-for i in range(n_zones):
-    g[0,i]=1
-for i in range(n_vehicles+1):
-    g[i,0]=rho[0]**i
-for i in range(1,n_vehicles+1):
-    for j in range(1,n_zones):
-        g[i,j]=g[i,j-1]+rho[j]*g[i-1,j]
-#print(g)
-G=g[n_vehicles,n_zones-1]
-#print(G)
-#print("time: ", time.time()-t0)
-"""
 def compute_normalization_constant(n_zones, n_vehicles, rho):
     #Convolution algorithm for Normalization coefficient v2 (more efficient)
     t1=time.time()
@@ -72,8 +57,8 @@ def compute_normalization_constant(n_zones, n_vehicles, rho):
    
 def MVA(n_zones, n_vehicles, service_rates, flows):
     #Mean Value Analysis (MVA)
-    average_vehicles=np.zeros((n_zones,n_vehicles))
-    average_waiting=np.zeros((n_zones,n_vehicles))
+    average_vehicles=np.zeros((n_zones,n_vehicles)) #average number of vehicles per zone
+    average_waiting=np.zeros((n_zones,n_vehicles)) #average "waiting time" of vehicles per zone
     for m in range(1,n_vehicles):
         for n in range(n_zones):
             average_waiting[n,m]=(1+average_vehicles[n,m-1])/(service_rates[n])
@@ -82,20 +67,24 @@ def MVA(n_zones, n_vehicles, service_rates, flows):
     return average_vehicles[:,-1], average_waiting[:,-1], overall_throughput
 
 if __name__=="__main__":
+    np.random.seed(42)
     n_zones=3
     n_vehicles=4
-    transition_probability=1
-    np.random.seed(35)
+    #transition_probability=1
+    #Generate vector of service rates per zone
     service_rates=np.random.randint(low=5, high=15, size=n_zones)
     print("mu: ",service_rates)
+    #Compute number of possible states
     n_states=scipy.special.binom(n_zones+n_vehicles-1, n_vehicles)
     print("State space dimension: ", n_states)
 
     OD_matrix=build_OD(n_zones, False)
     print("OD:\n", OD_matrix)
+    #Check on eigenvalues of OD matrix for ergodicity
     print("Eigenvalues: ", np.linalg.eig(OD_matrix)[0])
 
     flows=compute_fluxes(n_zones, OD_matrix, service_rates, True)
+    #compute utilization vector (rho) with computed flows and service rates
     rho=np.divide(flows,service_rates)
     print("rho: ", rho)
 
