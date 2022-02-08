@@ -1,3 +1,4 @@
+from cmath import nan
 import numpy as np
 import scipy.special
 import time
@@ -10,22 +11,31 @@ for i in range(n_zones):
 """
 def build_OD(n_zones, cycles=False):
     #define OD_matrix with closed network constraint
+    seed=0
     OD_matrix=np.zeros((n_zones,n_zones))
-    for i in range(n_zones):
-        if not cycles: #with no cycles
-            transitions=np.random.randint(100, size=n_zones-1) #random transitions vector
-            transitions=np.round(transitions/np.sum(transitions),2) #normalized transitions vector
-            pos=0
-            for j in range(n_zones): #assign transition probabilities to non diagonal entries
-                if j!=i:
-                    OD_matrix[i,j]=transitions[pos]
-                    pos+=1
-        else: #with cycles
-            #assign normalized transitions vector to OD row
-            transitions=np.random.randint(100, size=n_zones)
-            transitions=np.round(transitions/np.sum(transitions),2)
-            OD_matrix[i]=transitions
-    return OD_matrix
+    valid=False
+    while not valid:
+        np.random.seed(seed)
+        for i in range(n_zones):
+            if not cycles: #with no cycles
+                transitions=np.random.randint(1000, size=n_zones-1) #random transitions vector
+                transitions=np.round(transitions/np.sum(transitions),2) #normalized transitions vector
+                pos=0
+                for j in range(n_zones): #assign transition probabilities to non diagonal entries
+                    if j!=i:
+                        OD_matrix[i,j]=transitions[pos]
+                        pos+=1
+            else: #with cycles
+                #assign normalized transitions vector to OD row
+                transitions=np.random.randint(100, size=n_zones)
+                transitions=np.round(transitions/np.sum(transitions),2)
+                OD_matrix[i]=transitions
+        if np.real(np.linalg.eig(OD_matrix)[0][0])==1: #check for ergodicity of the matrix
+            valid=True
+            print("OD seed: ",seed)
+            return OD_matrix
+        else:
+            seed+=1
 
 def compute_fluxes(n_zones, OD_matrix, service_rates, normalized=True):
     lambda_vec=np.ones((n_zones)) #initialize vector of flows
@@ -33,12 +43,12 @@ def compute_fluxes(n_zones, OD_matrix, service_rates, normalized=True):
     iterate=True
     while iterate:
         flows=np.dot(lambda_vec,OD_matrix) #compute vector of flows
-        if (abs(flows-lambda_vec)>10e-8).any(): #check on convergence
+        if (abs(flows-lambda_vec)>10e-4).any(): #check on convergence
             lambda_vec=flows
             num_it+=1
         else:
             iterate=False
-    #print("num it: ", num_it)
+    print("num it: ", num_it)
     if normalized: #flows equal service rate in queue 1
         flows_normalized=flows/flows[0]*service_rates[0]
         flows=flows_normalized
@@ -68,8 +78,8 @@ def MVA(n_zones, n_vehicles, service_rates, flows):
 
 if __name__=="__main__":
     np.random.seed(42)
-    n_zones=3
-    n_vehicles=4
+    n_zones=10
+    n_vehicles=100
     #transition_probability=1
     #Generate vector of service rates per zone
     service_rates=np.random.randint(low=5, high=15, size=n_zones)
@@ -81,9 +91,10 @@ if __name__=="__main__":
     OD_matrix=build_OD(n_zones, False)
     print("OD:\n", OD_matrix)
     #Check on eigenvalues of OD matrix for ergodicity
-    print("Eigenvalues: ", np.linalg.eig(OD_matrix)[0])
+    #print("Eigenvalues: ", np.linalg.eig(OD_matrix)[0])
 
     flows=compute_fluxes(n_zones, OD_matrix, service_rates, True)
+    print("flows: ", flows)
     #compute utilization vector (rho) with computed flows and service rates
     rho=np.divide(flows,service_rates)
     print("rho: ", rho)
@@ -91,7 +102,7 @@ if __name__=="__main__":
     normalization_constant=compute_normalization_constant(n_zones, n_vehicles, rho)
     av_vehicles, av_waiting, ov_throughput=MVA(n_zones, n_vehicles, service_rates, flows)
 
-    print("flows: ", flows)
+    
     print("Normalization constant: ", normalization_constant)
     print("Avergae vehicles vector: ", av_vehicles)
     print("Avergae waiting time vector: ", av_waiting)
