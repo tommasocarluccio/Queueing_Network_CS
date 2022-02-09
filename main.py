@@ -1,6 +1,7 @@
 from cmath import nan
 import numpy as np
 import scipy.special
+import itertools
 import time
 
 """
@@ -78,8 +79,8 @@ def MVA(n_zones, n_vehicles, service_rates, flows):
 
 if __name__=="__main__":
     np.random.seed(42)
-    n_zones=10
-    n_vehicles=100
+    n_zones=4
+    n_vehicles=20
     #transition_probability=1
     #Generate vector of service rates per zone
     service_rates=np.random.randint(low=5, high=15, size=n_zones)
@@ -108,3 +109,18 @@ if __name__=="__main__":
     print("Avergae waiting time vector: ", av_waiting)
     print("Overall throughput: ", ov_throughput)
     print("Throughputs vector: ", ov_throughput*flows)
+
+    #Find pi for states where at least a queue is empty 
+    tot_pi_0=0
+    empty_queues=[]
+    v_vector=range(0,n_vehicles+1)
+    #All possible arrangements of n_vehicles in n_zones
+    #t=time.time()
+    for vehicle_per_zone in itertools.product(v_vector, repeat=n_zones):
+        if np.sum(vehicle_per_zone)==n_vehicles and (np.array(vehicle_per_zone)==0).any(): #states when at least one queue is empty
+            pi=np.round(np.prod(rho**(np.array(vehicle_per_zone)))/normalization_constant,4) #probability of state with product form
+            empty_queues.append((list(vehicle_per_zone),pi))
+            tot_pi_0+=pi
+    #print("time1: ",time.time()-t)
+    print("Probabilities for unsatisfied demand states:\n",empty_queues)
+    print("Overall probability of unsatisfied demand states: ",np.round(tot_pi_0,4))
