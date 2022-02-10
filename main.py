@@ -3,6 +3,7 @@ import numpy as np
 import scipy.special
 import itertools
 import time
+import matplotlib.pyplot as plt
 
 """
 OD_matrix=np.full((n_zones,n_zones),transition_probability)
@@ -77,10 +78,75 @@ def MVA(n_zones, n_vehicles, service_rates, flows):
         average_vehicles[:,m]=np.multiply(flows*overall_throughput,average_waiting[:,m])
     return average_vehicles[:,-1], average_waiting[:,-1], overall_throughput
 
+def compute_generic_pi(vehicles_vector, rho, normalization_constant):
+    pi=np.prod(rho**vehicles_vector)/normalization_constant
+    return np.round(pi,4)
+
+def compute_pi0(n_zones, n_vehicles, rho, normalization_constant):
+    #Find pi for states where at least a queue is empty 
+    tot_pi_0=0
+    empty_queues=[]
+    v_vector=range(0,n_vehicles+1)
+    #All possible arrangements of n_vehicles in n_zones
+    for vehicle_per_zone in itertools.product(v_vector, repeat=n_zones):
+        if np.sum(vehicle_per_zone)==n_vehicles and (np.array(vehicle_per_zone)==0).any(): #states when at least one queue is empty
+            pi=np.round(np.prod(rho**(np.array(vehicle_per_zone)))/normalization_constant,4) #probability of state with product form
+            empty_queues.append((list(vehicle_per_zone),pi))
+            tot_pi_0+=pi
+    #print("Probabilities for unsatisfied demand states:\n",empty_queues)
+    #print("Overall probability of unsatisfied demand states: ",np.round(tot_pi_0,4))
+    return np.round(tot_pi_0,4)
+
+def compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant):
+        tot_pi_0=0
+        tot_vehicles_lost=0
+        empty_queues=[]
+        v_vector=range(1,n_vehicles+1)
+        #fixing n queues with zero vehicles and find all possible arangements of n_vehicles in n_zones-n 
+        for num_zeros in range(1,n_zones):
+            for vehicle_per_zone in itertools.product(v_vector, repeat=n_zones-num_zeros):
+                if np.sum(vehicle_per_zone)==n_vehicles: 
+                    for partial_rho in itertools.combinations(rho,n_zones-num_zeros): #possible rho ignoring zones with zero vehicles
+                        pi=np.round(np.prod(partial_rho**(np.array(vehicle_per_zone)))/normalization_constant,4)
+                        id=np.isin(rho,partial_rho) #indexes of zone with vehicles
+                        partial_mu=[service_rates[i] for i in range(service_rates.size) if id[i]==False]
+                        vehicles_lost=np.round((np.sum(partial_mu))*pi,4)
+                        pos=0
+                        v_complete=[]
+                        for i in range(id.size):
+                            if id[i]:
+                                v_complete.append(vehicle_per_zone[pos])
+                                pos+=1
+                            else:
+                                v_complete.append(0)
+                        empty_queues.append((v_complete,pi,vehicles_lost))
+                        tot_vehicles_lost+=vehicles_lost
+                        tot_pi_0+=pi
+        print("empty queues: ", empty_queues)
+        #print("Tot pi0: ", np.round(tot_pi_0,4))
+        return np.round(tot_pi_0,4), np.round(tot_vehicles_lost,4)
+
+def plot_pi0(n_zones, n_vehicles_max, rho):
+        tot_pi0_vector=[]
+        vehicles_range=range(1,n_vehicles_max)
+        for n_vehicles in vehicles_range:
+            normalization_constant=compute_normalization_constant(n_zones, n_vehicles, rho)
+            tot_pi0_vector.append(compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant))
+        
+        fig, ax = plt.subplots()
+        ax.plot(vehicles_range, tot_pi0_vector, linewidth=2.0)
+        ax.set(xlim=(0, max(vehicles_range)), ylim=(0, 1.02))
+        ax.set_title(f"Total pi0 as function of vehicles number for {n_zones} zones")
+        ax.set_xlabel("Number of vehicles")
+        ax.set_ylabel("Total pi0")
+        ax.grid()
+        plt.show()
+
+
 if __name__=="__main__":
     np.random.seed(42)
-    n_zones=4
-    n_vehicles=20
+    n_zones=3
+    n_vehicles=10
     #transition_probability=1
     #Generate vector of service rates per zone
     service_rates=np.random.randint(low=5, high=15, size=n_zones)
@@ -109,18 +175,22 @@ if __name__=="__main__":
     print("Avergae waiting time vector: ", av_waiting)
     print("Overall throughput: ", ov_throughput)
     print("Throughputs vector: ", ov_throughput*flows)
+    """
+    t=time.time()
+    tot_pi0=compute_pi0(n_zones, n_vehicles, rho, normalization_constant)
+    print("Total pi0: ", tot_pi0)
+    print("t1: ", time.time()-t)
+    """
+    #compute pi(0,4,6)
+    vehicles_vector=np.array([0,4,6])
+    pi=compute_generic_pi(vehicles_vector, rho, normalization_constant)
+    print(f"Probability of {vehicles_vector}: {pi}")
 
-    #Find pi for states where at least a queue is empty 
-    tot_pi_0=0
-    empty_queues=[]
-    v_vector=range(0,n_vehicles+1)
-    #All possible arrangements of n_vehicles in n_zones
-    #t=time.time()
-    for vehicle_per_zone in itertools.product(v_vector, repeat=n_zones):
-        if np.sum(vehicle_per_zone)==n_vehicles and (np.array(vehicle_per_zone)==0).any(): #states when at least one queue is empty
-            pi=np.round(np.prod(rho**(np.array(vehicle_per_zone)))/normalization_constant,4) #probability of state with product form
-            empty_queues.append((list(vehicle_per_zone),pi))
-            tot_pi_0+=pi
-    #print("time1: ",time.time()-t)
-    print("Probabilities for unsatisfied demand states:\n",empty_queues)
-    print("Overall probability of unsatisfied demand states: ",np.round(tot_pi_0,4))
+    t=time.time()
+    tot_pi0_2, tot_vehicles_lost=compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant)
+    print("Total pi0: ", tot_pi0_2)
+    print("Total vehicles lost per time unit: ", tot_vehicles_lost)
+    print("t2: ", time.time()-t)
+
+    #plot_pi0(n_zones,50,rho)
+
