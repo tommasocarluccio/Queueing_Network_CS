@@ -13,7 +13,7 @@ for i in range(n_zones):
 """
 def build_OD(n_zones, cycles=False):
     #define OD_matrix with closed network constraint
-    seed=0
+    seed=1
     OD_matrix=np.zeros((n_zones,n_zones))
     valid=False
     while not valid:
@@ -99,7 +99,7 @@ def compute_pi0(n_zones, n_vehicles, rho, normalization_constant):
 
 def compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant):
         tot_pi_0=0
-        tot_vehicles_lost=0
+        tot_requests_lost=0
         empty_queues=[]
         v_vector=range(1,n_vehicles+1)
         #fixing n queues with zero vehicles and find all possible arangements of n_vehicles in n_zones-n 
@@ -110,7 +110,7 @@ def compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant):
                         pi=np.round(np.prod(partial_rho**(np.array(vehicle_per_zone)))/normalization_constant,4)
                         id=np.isin(rho,partial_rho) #indexes of zone with vehicles
                         partial_mu=[service_rates[i] for i in range(service_rates.size) if id[i]==False]
-                        vehicles_lost=np.round((np.sum(partial_mu))*pi,4)
+                        requests_lost=np.round((np.sum(partial_mu))*pi,4)
                         pos=0
                         v_complete=[]
                         for i in range(id.size):
@@ -119,12 +119,12 @@ def compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant):
                                 pos+=1
                             else:
                                 v_complete.append(0)
-                        empty_queues.append((v_complete,pi,vehicles_lost))
-                        tot_vehicles_lost+=vehicles_lost
+                        empty_queues.append((v_complete,pi,requests_lost))
+                        tot_requests_lost+=requests_lost
                         tot_pi_0+=pi
-        print("empty queues: ", empty_queues)
+        #print("empty queues: ", empty_queues)
         #print("Tot pi0: ", np.round(tot_pi_0,4))
-        return np.round(tot_pi_0,4), np.round(tot_vehicles_lost,4)
+        return np.round(tot_pi_0,4), np.round(tot_requests_lost,4)
 
 def plot_pi0(n_zones, n_vehicles_max, rho):
         tot_pi0_vector=[]
@@ -145,12 +145,12 @@ def plot_pi0(n_zones, n_vehicles_max, rho):
 
 if __name__=="__main__":
     np.random.seed(42)
-    n_zones=3
-    n_vehicles=10
+    n_zones=4
+    n_vehicles=40
     #transition_probability=1
     #Generate vector of service rates per zone
     service_rates=np.random.randint(low=5, high=15, size=n_zones)
-    print("mu: ",service_rates)
+    print("service rate per zone: ",service_rates)
     #Compute number of possible states
     n_states=scipy.special.binom(n_zones+n_vehicles-1, n_vehicles)
     print("State space dimension: ", n_states)
@@ -161,10 +161,10 @@ if __name__=="__main__":
     #print("Eigenvalues: ", np.linalg.eig(OD_matrix)[0])
 
     flows=compute_fluxes(n_zones, OD_matrix, service_rates, True)
-    print("flows: ", flows)
+    print("flow per zone: ", flows)
     #compute utilization vector (rho) with computed flows and service rates
     rho=np.divide(flows,service_rates)
-    print("rho: ", rho)
+    print("rho per zone: ", rho)
 
     normalization_constant=compute_normalization_constant(n_zones, n_vehicles, rho)
     av_vehicles, av_waiting, ov_throughput=MVA(n_zones, n_vehicles, service_rates, flows)
@@ -182,15 +182,15 @@ if __name__=="__main__":
     print("t1: ", time.time()-t)
     """
     #compute pi(0,4,6)
-    vehicles_vector=np.array([0,4,6])
-    pi=compute_generic_pi(vehicles_vector, rho, normalization_constant)
-    print(f"Probability of {vehicles_vector}: {pi}")
+    #vehicles_vector=np.array([0,4,3,3])
+    #pi=compute_generic_pi(vehicles_vector, rho, normalization_constant)
+    #print(f"Probability of {vehicles_vector}: {pi}")
 
-    t=time.time()
-    tot_pi0_2, tot_vehicles_lost=compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant)
+    #t=time.time()
+    tot_pi0_2, tot_requests_lost=compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant)
     print("Total pi0: ", tot_pi0_2)
-    print("Total vehicles lost per time unit: ", tot_vehicles_lost)
-    print("t2: ", time.time()-t)
+    print("Total requests lost per time unit: ", tot_requests_lost)
+    #print("t2: ", time.time()-t)
 
     #plot_pi0(n_zones,50,rho)
 
