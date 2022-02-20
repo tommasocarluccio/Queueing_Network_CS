@@ -69,9 +69,9 @@ def compute_normalization_constant(n_zones, n_vehicles, rho):
    
 def MVA(n_zones, n_vehicles, service_rates, flows):
     #Mean Value Analysis (MVA)
-    average_vehicles=np.zeros((n_zones,n_vehicles)) #average number of vehicles per zone
-    average_waiting=np.zeros((n_zones,n_vehicles)) #average "waiting time" of vehicles per zone
-    for m in range(1,n_vehicles):
+    average_vehicles=np.zeros((n_zones,n_vehicles+1)) #average number of vehicles per zone
+    average_waiting=np.zeros((n_zones,n_vehicles+1)) #average "waiting time" of vehicles per zone
+    for m in range(1,n_vehicles+1):
         for n in range(n_zones):
             average_waiting[n,m]=(1+average_vehicles[n,m-1])/(service_rates[n])
         overall_throughput=m/np.sum(np.multiply(average_waiting[:,m],flows))
@@ -160,19 +160,19 @@ if __name__=="__main__":
     #Check on eigenvalues of OD matrix for ergodicity
     #print("Eigenvalues: ", np.linalg.eig(OD_matrix)[0])
 
-    flows=compute_fluxes(n_zones, OD_matrix, service_rates, True)
+    flows=compute_fluxes(n_zones, OD_matrix, service_rates, False)
     print("flow per zone: ", flows)
+    av_vehicles, av_waiting, ov_throughput=MVA(n_zones, n_vehicles, service_rates, flows)
+    throughput_vector=ov_throughput*flows
     #compute utilization vector (rho) with computed flows and service rates
-    rho=np.divide(flows,service_rates)
+    rho=np.divide(throughput_vector,service_rates)
     print("rho per zone: ", rho)
 
     normalization_constant=compute_normalization_constant(n_zones, n_vehicles, rho)
-    av_vehicles, av_waiting, ov_throughput=MVA(n_zones, n_vehicles, service_rates, flows)
 
-    
     print("Normalization constant: ", normalization_constant)
-    print("Avergae vehicles vector: ", av_vehicles)
-    print("Avergae waiting time vector: ", av_waiting)
+    print("Average vehicles vector: ", av_vehicles)
+    print("Average waiting time vector: ", av_waiting)
     print("Overall throughput: ", ov_throughput)
     print("Throughputs vector: ", ov_throughput*flows)
     """
@@ -191,6 +191,22 @@ if __name__=="__main__":
     print("Total pi0: ", tot_pi0_2)
     print("Total requests lost per time unit: ", tot_requests_lost)
     #print("t2: ", time.time()-t)
-
+    
     #plot_pi0(n_zones,50,rho)
+    """
+    #example
+    n_zones=2
+    n_vehicles=3
+    service_rates=np.array([1,1])
+    OD_ex=np.matrix([[0.66, 0.33],[0.66, 0.33]])
+    print(OD_ex)
+    flows=compute_fluxes(n_zones, OD_ex, service_rates, False)
+    print("flow per zone: ", flows)
+    av_vehicles_, av_waiting, ov_throughput=MVA(n_zones, n_vehicles, service_rates, flows)
 
+    print("Normalization constant: ", normalization_constant)
+    print("Avergae vehicles vector: ", av_vehicles)
+    print("Avergae waiting time vector: ", av_waiting)
+    print("Overall throughput: ", ov_throughput)
+    print("Throughputs vector: ", ov_throughput*flows)
+    """
