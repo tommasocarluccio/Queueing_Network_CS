@@ -153,7 +153,7 @@ if __name__=="__main__":
     avg_arrival_v2_noF=[]
     loss_v2=[]
     loss_v2_noF=[]
-    range2=range(zone_capacity+1,300+1)
+    range2=range(zone_capacity+1,500+1)
     for n_vehicles in range2:
         pi0=compute_pi0(n_vehicles, zone_capacity, rho, n_servers)
         avg_v,avg_a,loss=compute_queue_indicators(pi0, n_vehicles, zone_capacity, rho, arrival_rate, n_servers, True)
