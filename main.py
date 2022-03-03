@@ -1,60 +1,33 @@
 from cmath import nan
 import numpy as np
+import scipy.linalg as la
 import scipy.special
 import itertools
 import time
 import matplotlib.pyplot as plt
+import pandas as pd
 
-"""
-OD_matrix=np.full((n_zones,n_zones),transition_probability)
-for i in range(n_zones):
-    OD_matrix[i,i]=0
-
-"""
-def build_OD(n_zones, service_rates, cycles=False):
-    #define OD_matrix with closed network constraint
-    seed=1
-    OD_matrix=np.zeros((n_zones,n_zones))
-    valid=False
-    while not valid:
-        np.random.seed(seed)
-        for i in range(n_zones):
-            if not cycles: #with no cycles
-                transitions=np.random.randint(1000, size=n_zones-1) #random transitions vector
-                transitions=np.round(transitions/np.sum(transitions),2) #normalized transitions vector
-                pos=0
-                for j in range(n_zones): #assign transition probabilities to non diagonal entries
-                    if j!=i:
-                        OD_matrix[i,j]=transitions[pos]
-                        pos+=1
-            else: #with cycles
-                #assign normalized transitions vector to OD row
-                transitions=np.random.randint(100, size=n_zones)
-                transitions=np.round(transitions/np.sum(transitions),2)
-                OD_matrix[i]=transitions
-        if int(np.real(np.linalg.eig(OD_matrix)[0][0]))==1: #check for ergodicity of the matrix
-            if (~np.isnan(np.sum(compute_fluxes(n_zones, OD_matrix, service_rates, False)))):
-                valid=True
-                print("OD seed: ",seed)
-                return OD_matrix
-        else:
-            seed+=1
-
-def compute_fluxes(n_zones, OD_matrix, service_rates, normalized):
+def build_OD(n_zones, cycles=False):
+    matrix = np.random.rand(n_zones,n_zones)
+    if not cycles:
+        np.fill_diagonal(matrix,np.zeros(n_zones))
+    matrix=matrix/matrix.sum(axis=1)[:,None]
+    #print(matrix)
+    #print("eigenvalues:", np.linalg.eig(matrix)[0])
+    return matrix
+    
+def compute_fluxes(n_zones, OD_matrix):
     lambda_vec=np.ones((n_zones)) #initialize vector of flows
     num_it=0
     iterate=True
     while iterate:
         flows=np.dot(lambda_vec,OD_matrix) #compute vector of flows
-        if (abs(flows-lambda_vec)>10e-3).any(): #check on convergence
+        if (abs(flows-lambda_vec)>10e-4).any(): #check on convergence
             lambda_vec=flows
             num_it+=1
         else:
             iterate=False
     print("num it: ", num_it)
-    if normalized: #flows equal service rate in queue 1
-        flows_normalized=flows/flows[0]*service_rates[0]
-        flows=flows_normalized
     return np.round(flows,4)
 
 def compute_normalization_constant(n_zones, n_vehicles, rho):
@@ -83,22 +56,35 @@ def compute_generic_pi(vehicles_vector, rho, normalization_constant):
     pi=np.prod(rho**vehicles_vector)/normalization_constant
     return np.round(pi,4)
 
-def compute_pi0(n_zones, n_vehicles, rho, normalization_constant):
-    #Find pi for states where at least a queue is empty 
-    tot_pi_0=0
-    empty_queues=[]
-    v_vector=range(0,n_vehicles+1)
-    #All possible arrangements of n_vehicles in n_zones
-    for vehicle_per_zone in itertools.product(v_vector, repeat=n_zones):
-        if np.sum(vehicle_per_zone)==n_vehicles and (np.array(vehicle_per_zone)==0).any(): #states when at least one queue is empty
-            pi=np.round(np.prod(rho**(np.array(vehicle_per_zone)))/normalization_constant,4) #probability of state with product form
-            empty_queues.append((list(vehicle_per_zone),pi))
-            tot_pi_0+=pi
-    #print("Probabilities for unsatisfied demand states:\n",empty_queues)
-    #print("Overall probability of unsatisfied demand states: ",np.round(tot_pi_0,4))
-    return np.round(tot_pi_0,4)
+def find_states(array, n_vehicles, n_zones, level, states):
+    if level == len(array) - 1:
+        # parte per generare effettivamente lo stato e aggiungerlo alla lista
+        array[-1] = n_vehicles - sum(array[:-1])
+        states.append(array.copy())
+    else:
+        if level == 0:
+            end_loop = n_vehicles + 1
+        else:
+            end_loop = n_vehicles - sum(array[:level]) + 1
+        array[level] = 0
+        while array[level] < end_loop:
+            find_states(array, n_vehicles, n_zones, level + 1, states)
+            array[level] += 1
 
-def compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant):
+def compute_pi0_rec(states, rho, normalization_constant, service_rates):
+    tot_pi0=0
+    tot_requests_lost=0
+    empty_queues=[]
+    for state in states:
+        if 0 in state:
+            pi=np.round(np.prod(rho**(np.array(state)))/normalization_constant,4)
+            requests_lost=np.round(np.sum(np.multiply(service_rates,pi)),4)
+            empty_queues.append((state,pi,requests_lost))
+            tot_requests_lost+=requests_lost
+            tot_pi0+=pi
+    return empty_queues, tot_pi0, tot_requests_lost
+
+def compute_pi0_comb(n_zones, n_vehicles, rho, normalization_constant):
         tot_pi_0=0
         tot_requests_lost=0
         empty_queues=[]
@@ -125,14 +111,14 @@ def compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant):
                         tot_pi_0+=pi
         #print("empty queues: ", empty_queues)
         #print("Tot pi0: ", np.round(tot_pi_0,4))
-        return np.round(tot_pi_0,4), np.round(tot_requests_lost,4)
+        return empty_queues, np.round(tot_pi_0,4), np.round(tot_requests_lost,4)
 
 def plot_pi0(n_zones, n_vehicles_max, rho):
         tot_pi0_vector=[]
         vehicles_range=range(1,n_vehicles_max)
         for n_vehicles in vehicles_range:
             normalization_constant=compute_normalization_constant(n_zones, n_vehicles, rho)
-            tot_pi0_vector.append(compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant))
+            tot_pi0_vector.append(compute_pi0_comb(n_zones, n_vehicles, rho, normalization_constant))
         
         fig, ax = plt.subplots()
         ax.plot(vehicles_range, tot_pi0_vector, linewidth=2.0)
@@ -143,82 +129,141 @@ def plot_pi0(n_zones, n_vehicles_max, rho):
         ax.grid()
         plt.show()
 
+def plot_bar_per_zone(n_zones, avg_vehicles, idle_times, throughputs, utilization, un_demand, lost_requests):
+    if avg_vehicles is not None:
+        fig11, ax11 = plt.subplots()
+        ax11.bar(np.arange(1,n_zones+1),avg_vehicles)
+        ax11.set_title(f"Average vehicles per zones")
+        ax11.set_xlabel("Zone")
+        ax11.set_ylabel("Vehicles")
+        ax11.grid()
+        plt.show()
+    if idle_times is not None:
+        fig12, ax12 = plt.subplots()
+        ax12.bar(np.arange(1,n_zones+1),idle_times)
+        ax12.set_title(f"Average vehicles idle times per zones")
+        ax12.set_xlabel("Zone")
+        ax12.set_ylabel("Idle time [s]")
+        ax12.grid()
+        plt.show()
+    if throughputs is not None:
+        fig13, ax13 = plt.subplots()
+        ax13.bar(np.arange(1,n_zones+1),throughputs)
+        ax13.set_title(f"Vehicles througput per zones")
+        ax13.set_xlabel("Zone")
+        ax13.set_ylabel("Throughput")
+        ax13.grid()
+        plt.show()
+    if utilization is not None:
+        fig14, ax14 = plt.subplots()
+        ax14.bar(np.arange(1,n_zones+1),utilization)
+        ax14.set_title(f"Utilization per zones")
+        ax14.set_xlabel("Zone")
+        ax14.set_ylabel("Utilization [%]")
+        ax14.grid()
+        plt.show()
+    if un_demand is not None:
+        fig15, ax15 = plt.subplots()
+        ax15.bar(np.arange(1,n_zones+1),un_demand)
+        ax15.set_title(f"Unsatisfied mobility demand per zones")
+        ax15.set_xlabel("Zone")
+        ax15.set_ylabel("Unsatisfied demand [%]")
+        ax15.grid()
+        plt.show()
+    if lost_requests is not None:
+        fig16, ax16 = plt.subplots()
+        ax16.bar(np.arange(1,n_zones+1),lost_requests)
+        ax16.set_title(f"Lost mobility requests per zones")
+        ax16.set_xlabel("Zone")
+        ax16.set_ylabel("Lost requests")
+        ax16.grid()
+        plt.show()
+
+
 if __name__=="__main__":
-    np.random.seed(42)
-    n_zones=30
-    n_vehicles=100
-    #transition_probability=1
+    np.random.seed(12)
+    n_zones=280
+    n_vehicles=400
+    
     #Generate vector of service rates per zone
-    service_rates=np.random.randint(low=5, high=15, size=n_zones)
+    service_rates=np.random.randint(low=1, high=5, size=n_zones)
     #service_rates=np.array([10,10,10])
     print("service rate per zone: ",service_rates)
+
     #Compute number of possible states
     n_states=scipy.special.binom(n_zones+n_vehicles-1, n_vehicles)
     print("State space dimension: ", n_states)
 
-    OD_matrix=build_OD(n_zones, service_rates, False)
+    #Build OD matrix - True if cycles are admitted
+    OD_matrix=build_OD(n_zones, False)
     #OD_matrix=np.array([[0, 0.1, 0.9],[0.8, 0, 0.2],[0.7, 0.3, 0]])
     print("OD:\n", OD_matrix)
-    #Check on eigenvalues of OD matrix for ergodicity
+    #Check on eigenvalues of OD matrix 
     #print("Eigenvalues: ", np.linalg.eig(OD_matrix)[0])
-
-    flows=compute_fluxes(n_zones, OD_matrix, service_rates, False)
+    
+    flows=compute_fluxes(n_zones, OD_matrix)
     print("relative flow per zone: ", flows)
+    
+    #Mean Value Analysis of the network
     av_vehicles, av_waiting, ov_throughput=MVA(n_zones, n_vehicles, service_rates, flows)
     throughput_vector=np.round(ov_throughput*flows,4)
+    print("Average vehicles vector: ", av_vehicles)
+    print("Average vehicles idle time vector: ", av_waiting)
+    print("Overall throughput (constant for the flow calculation): ", ov_throughput)
+    print("Throughputs vector (Real flows): ", throughput_vector)
+    
     #compute utilization vector (rho) with computed flows and service rates
     rho=np.round(np.divide(throughput_vector,service_rates),4)
     print("rho (utilization) per zone: ", rho)
 
-    #normalization_constant=compute_normalization_constant(n_zones, n_vehicles, rho)
-
+    #convolutional algorithm for the normalization constant (used for distribution calculations)
+    normalization_constant=compute_normalization_constant(n_zones, n_vehicles, rho)
     #print("Normalization constant: ", normalization_constant)
-    print("Average vehicles vector: ", av_vehicles)
-    print("Average waiting time vector: ", av_waiting)
-    print("Overall throughput: ", ov_throughput)
-    print("Throughputs vector: ", throughput_vector)
+
+    
     """
-    t=time.time()
-    tot_pi0=compute_pi0(n_zones, n_vehicles, rho, normalization_constant)
-    print("Total pi0: ", tot_pi0)
-    print("t1: ", time.time()-t)
-    """
+    #Distribution calculation methods (recursive and combinatorial)
+    t1=time.time()
+    counters = [0] * n_zones
+    state_list = list()
+    find_states(counters, n_vehicles, n_zones, 0, state_list)
+    #print("States: ", state_list)
+    empty_queues, tot_pi0, tot_requests_lost=compute_pi0_rec(state_list, rho, normalization_constant, service_rates)
+    print("t rec: ", time.time()-t1)
+    print(tot_pi0)
+    t2=time.time()
+    empty_queues, tot_pi0, tot_requests_lost=compute_pi0_comb(n_zones, n_vehicles, rho, normalization_constant)
+    print("t comb: ", time.time()-t2)
+    print(tot_pi0)
     #compute pi(0,4,6)
     #vehicles_vector=np.array([0,4,3,3])
     #pi=compute_generic_pi(vehicles_vector, rho, normalization_constant)
-    #print(f"Probability of {vehicles_vector}: {pi}")
-
-    #t=time.time()
-    #tot_pi0_2, tot_requests_lost=compute_pi0_2(n_zones, n_vehicles, rho, normalization_constant)
-    #print("Total pi0: ", tot_pi0_2)
-    #print("Total requests lost per time unit: ", tot_requests_lost)
-    #print("t2: ", time.time()-t)
-    
+    #print(f"Probability of {vehicles_vector}: {pi}") 
     #plot_pi0(n_zones,50,rho)
-    unsatisfied_demand_per_zone=((1-rho)*100)
+    """
+
+    unsatisfied_demand_per_zone=((1-rho))
     np.set_printoptions(suppress=True)
-    print(f"Percentage of unsatisfied demand per zone: {unsatisfied_demand_per_zone}%")
-    print(f"Average demand lost: {np.round(np.sum(unsatisfied_demand_per_zone)/n_zones,2)}%")
+    print(f"Percentage of unsatisfied demand per zone: {unsatisfied_demand_per_zone*100}%")
+    print(f"Average demand lost: {np.round(np.sum(unsatisfied_demand_per_zone*100)/n_zones,2)}%")
+
     lost_requests_per_zone=np.round(np.multiply(unsatisfied_demand_per_zone,service_rates),4)
     print("Requests lost per unit time per zone: ", lost_requests_per_zone)
     print("Total requests lost: ",np.round(np.sum(lost_requests_per_zone),4))
 
+    #cumulative distribution histogram of unsatisfied demand
     fig3, ax3 = plt.subplots()
-    ax3.bar(np.arange(1,n_zones+1), unsatisfied_demand_per_zone)
-    ax3.set_title(f"Unsatisfied mobility demand per zones [%]")
-    ax3.set(ylim=(0,100))
-    ax3.set_xlabel("Zone")
+    ax3.hist(unsatisfied_demand_per_zone, bins=30, cumulative=True, density=True, histtype="stepfilled")
+    ax3.set_title(f"Cumulative distribution of unsatisfied mobility demand per zones")
+    ax3.set_xlabel("Unsatisfied demand")
     ax3.grid()
     plt.show()
 
-    relative_lost_demand=np.divide(lost_requests_per_zone, np.sum(lost_requests_per_zone))*100
-    fig4, ax4 = plt.subplots()
-    ax4.bar(np.arange(1,n_zones+1),relative_lost_demand)
-    ax4.set_title(f"Relative lost mobility requests per zones [% over total]")
-    ax4.set_xlabel("Zone")
-    ax4.grid()
-    plt.show()
+    #bar chart with zones parameters (set to None to avoid plotting)
+    #plot_bar_per_zone(n_zones, av_vehicles, av_waiting, throughput_vector, rho, unsatisfied_demand_per_zone, lost_requests_per_zone)
 
+   
+    """
     range_v=np.arange(n_zones,600)
     avg_uns_demand_list=[]
     tot_lost_requests_list=[]
@@ -248,4 +293,4 @@ if __name__=="__main__":
     ax2.legend()
     plt.show()
 
-    
+"""
