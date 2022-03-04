@@ -52,6 +52,63 @@ def MVA(n_zones, n_vehicles, service_rates, flows):
         average_vehicles[:,m]=np.multiply(flows*overall_throughput,average_waiting[:,m])
     return np.round(average_vehicles[:,-1],4), np.round(average_waiting[:,-1],4), np.round(overall_throughput,4)
 
+def MS_AMVA(n_zones, n_vehicles, service_rates, flows, n_servers):
+    #Mean Value Analysis (MVA)
+    average_vehicles=np.zeros((n_zones,n_vehicles+1)) #average number of vehicles per zone
+    average_waiting=np.zeros((n_zones,n_vehicles+1)) #average "waiting time" of vehicles per zone
+    for m in range(1,n_vehicles+1):
+        for n in range(n_zones):
+            correction_factor=(1/n_servers[n])*(flows[n]**((n_servers[n]**0.676)-1))
+            average_waiting[n,m]=(1+correction_factor*average_vehicles[n,m-1])/(service_rates[n])
+        overall_throughput=m/np.sum(np.multiply(average_waiting[:,m],flows))
+        average_vehicles[:,m]=np.multiply(flows*overall_throughput,average_waiting[:,m])
+    return np.round(average_vehicles[:,-1],4), np.round(average_waiting[:,-1],4), np.round(overall_throughput,4)
+
+def MS_AMVA2(n_zones, n_vehicles, service_rates, flows, n_servers, alpha, beta):
+    pr=np.zeros(n_vehicles+1)
+    pr[1]=alpha
+    for i in range(2,n_vehicles+1):
+        pr[i]=beta*pr[i-1]
+    print(pr)
+    w=np.zeros((n_vehicles+1,n_vehicles+1))
+    w[0,0]=1
+    for i in range(1,n_vehicles+1):
+        su=0
+        for j in range(i):
+            w[i,j]=w[i-1,j]-(w[i-1,j]*pr[i]/100)
+            su+=w[i,j]
+        w[i,i]=1-su
+    return w
+
+def MS_MVA(n_zones, n_vehicles, service_rates, flows, n_servers):
+    #Multi servers Mean Value Analysis (MS-MVA)
+    average_vehicles=np.zeros((n_zones,n_vehicles+1)) #average number of vehicles per zone
+    average_waiting=np.zeros((n_zones,n_vehicles+1)) #average "waiting time" of vehicles per zone
+    max_ns=int(np.max(n_servers))
+    p=np.zeros((max_ns,n_vehicles+1))
+    p[0,0]=1
+    for m in range(1,n_vehicles+1):
+        for n in range(n_zones):
+            ns=int(n_servers[n])
+            if ns!=1: 
+                correction_factor=0
+                for j in range(1,ns):
+                    correction_factor+=(ns-j)*p[ns-j,m-1]
+            else:
+                correction_factor=0
+            average_waiting[n,m]=(1+average_vehicles[n,m-1]+correction_factor)/(service_rates[n]*ns)
+        overall_throughput=m/np.sum(np.multiply(average_waiting[:,m],flows))
+        average_vehicles[:,m]=np.multiply(flows*overall_throughput,average_waiting[:,m])
+        for n in range (n_zones):
+            ns=int(n_servers[n])
+            su=0
+            if ns!=1:
+                for j in range(1,ns):
+                    p[j,m]=(1/j)*(flows[n]/service_rates[n])*overall_throughput*p[j-1,m-1]
+                    su+=(ns-j)*p[j,m]
+            p[0,m]=1-(1/ns)*((flows[n]/service_rates[n])*overall_throughput+su)
+    return np.round(average_vehicles[:,-1],4), np.round(average_waiting[:,-1],4), np.round(overall_throughput,4)
+
 def compute_generic_pi(vehicles_vector, rho, normalization_constant):
     pi=np.prod(rho**vehicles_vector)/normalization_constant
     return np.round(pi,4)
@@ -182,12 +239,17 @@ def plot_bar_per_zone(n_zones, avg_vehicles, idle_times, throughputs, utilizatio
 
 if __name__=="__main__":
     np.random.seed(12)
-    n_zones=280
-    n_vehicles=400
+    n_zones=20+1
+    n_vehicles=40
+
+    n_servers=np.ones(n_zones)
+    n_servers[20]=10
+    #n_servers[1]=3
+    #n_servers[2]=4
     
     #Generate vector of service rates per zone
     service_rates=np.random.randint(low=1, high=5, size=n_zones)
-    #service_rates=np.array([10,10,10])
+    #service_rates=np.array([1,2,2])
     print("service rate per zone: ",service_rates)
 
     #Compute number of possible states
@@ -196,6 +258,9 @@ if __name__=="__main__":
 
     #Build OD matrix - True if cycles are admitted
     OD_matrix=build_OD(n_zones, False)
+    OD_matrix[20,:]=np.zeros(n_zones)
+    OD_matrix[20,3]=1
+    np.set_printoptions(suppress=True)
     #OD_matrix=np.array([[0, 0.1, 0.9],[0.8, 0, 0.2],[0.7, 0.3, 0]])
     print("OD:\n", OD_matrix)
     #Check on eigenvalues of OD matrix 
@@ -205,9 +270,31 @@ if __name__=="__main__":
     print("relative flow per zone: ", flows)
     
     #Mean Value Analysis of the network
+    #flows=np.array([0.843,0.843,0.422])
     av_vehicles, av_waiting, ov_throughput=MVA(n_zones, n_vehicles, service_rates, flows)
     throughput_vector=np.round(ov_throughput*flows,4)
     print("Average vehicles vector: ", av_vehicles)
+    print("Average vehicles idle time vector: ", av_waiting)
+    print("Overall throughput (constant for the flow calculation): ", ov_throughput)
+    print("Throughputs vector (Real flows): ", throughput_vector)
+
+    #compute utilization vector (rho) with computed flows and service rates
+    rho=np.round(np.divide(throughput_vector,service_rates),4)
+    print("rho (utilization) per zone: ", rho)
+
+    unsatisfied_demand_per_zone=((1-rho))
+    np.set_printoptions(suppress=True)
+    print(f"Percentage of unsatisfied demand per zone: {unsatisfied_demand_per_zone*100}%")
+    print(f"Average demand lost: {np.round(np.sum(unsatisfied_demand_per_zone*100)/n_zones,2)}%")
+
+    lost_requests_per_zone=np.round(np.multiply(unsatisfied_demand_per_zone,service_rates),4)
+    print("Requests lost per unit time per zone: ", lost_requests_per_zone)
+    print("Total requests lost: ",np.round(np.sum(lost_requests_per_zone),4))
+
+    #Multi-Server Mean Value Analysis of the network
+    av_vehicles, av_waiting, ov_throughput=MS_MVA(n_zones, n_vehicles, service_rates, flows, n_servers)
+    throughput_vector=np.round(ov_throughput*flows,4)
+    print("\n\n2. Average vehicles vector: ", av_vehicles)
     print("Average vehicles idle time vector: ", av_waiting)
     print("Overall throughput (constant for the flow calculation): ", ov_throughput)
     print("Throughputs vector (Real flows): ", throughput_vector)
@@ -262,6 +349,7 @@ if __name__=="__main__":
     #bar chart with zones parameters (set to None to avoid plotting)
     #plot_bar_per_zone(n_zones, av_vehicles, av_waiting, throughput_vector, rho, unsatisfied_demand_per_zone, lost_requests_per_zone)
 
+    #print(MS_AMVA2(n_zones, n_vehicles, service_rates, flows, n_servers, 45, 0.7))
    
     """
     range_v=np.arange(n_zones,600)
