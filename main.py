@@ -64,21 +64,6 @@ def MS_AMVA(n_zones, n_vehicles, service_rates, flows, n_servers):
         average_vehicles[:,m]=np.multiply(flows*overall_throughput,average_waiting[:,m])
     return np.round(average_vehicles[:,-1],4), np.round(average_waiting[:,-1],4), np.round(overall_throughput,4)
 
-def MS_AMVA2(n_zones, n_vehicles, service_rates, flows, n_servers, alpha, beta):
-    pr=np.zeros(n_vehicles+1)
-    pr[1]=alpha
-    for i in range(2,n_vehicles+1):
-        pr[i]=beta*pr[i-1]
-    print(pr)
-    w=np.zeros((n_vehicles+1,n_vehicles+1))
-    w[0,0]=1
-    for i in range(1,n_vehicles+1):
-        su=0
-        for j in range(i):
-            w[i,j]=w[i-1,j]-(w[i-1,j]*pr[i]/100)
-            su+=w[i,j]
-        w[i,i]=1-su
-    return w
 
 def MS_MVA(n_zones, n_vehicles, service_rates, flows, n_servers):
     #Multi servers Mean Value Analysis (MS-MVA)
@@ -243,7 +228,7 @@ if __name__=="__main__":
     n_vehicles=40
 
     n_servers=np.ones(n_zones)
-    n_servers[20]=10
+    #n_servers[20]=10
     #n_servers[1]=3
     #n_servers[2]=4
     
@@ -258,8 +243,8 @@ if __name__=="__main__":
 
     #Build OD matrix - True if cycles are admitted
     OD_matrix=build_OD(n_zones, False)
-    OD_matrix[20,:]=np.zeros(n_zones)
-    OD_matrix[20,3]=1
+    #OD_matrix[20,:]=np.zeros(n_zones)
+    #OD_matrix[20,3]=1
     np.set_printoptions(suppress=True)
     #OD_matrix=np.array([[0, 0.1, 0.9],[0.8, 0, 0.2],[0.7, 0.3, 0]])
     print("OD:\n", OD_matrix)
@@ -303,11 +288,20 @@ if __name__=="__main__":
     rho=np.round(np.divide(throughput_vector,service_rates),4)
     print("rho (utilization) per zone: ", rho)
 
+    unsatisfied_demand_per_zone=((1-rho))
+    np.set_printoptions(suppress=True)
+    print(f"Percentage of unsatisfied demand per zone: {unsatisfied_demand_per_zone*100}%")
+    print(f"Average demand lost: {np.round(np.sum(unsatisfied_demand_per_zone*100)/n_zones,2)}%")
+
+    lost_requests_per_zone=np.round(np.multiply(unsatisfied_demand_per_zone,service_rates),4)
+    print("Requests lost per unit time per zone: ", lost_requests_per_zone)
+    print("Total requests lost: ",np.round(np.sum(lost_requests_per_zone),4))
+
+
     #convolutional algorithm for the normalization constant (used for distribution calculations)
     normalization_constant=compute_normalization_constant(n_zones, n_vehicles, rho)
     #print("Normalization constant: ", normalization_constant)
 
-    
     """
     #Distribution calculation methods (recursive and combinatorial)
     t1=time.time()
@@ -329,15 +323,7 @@ if __name__=="__main__":
     #plot_pi0(n_zones,50,rho)
     """
 
-    unsatisfied_demand_per_zone=((1-rho))
-    np.set_printoptions(suppress=True)
-    print(f"Percentage of unsatisfied demand per zone: {unsatisfied_demand_per_zone*100}%")
-    print(f"Average demand lost: {np.round(np.sum(unsatisfied_demand_per_zone*100)/n_zones,2)}%")
-
-    lost_requests_per_zone=np.round(np.multiply(unsatisfied_demand_per_zone,service_rates),4)
-    print("Requests lost per unit time per zone: ", lost_requests_per_zone)
-    print("Total requests lost: ",np.round(np.sum(lost_requests_per_zone),4))
-
+    
     #cumulative distribution histogram of unsatisfied demand
     fig3, ax3 = plt.subplots()
     ax3.hist(unsatisfied_demand_per_zone, bins=30, cumulative=True, density=True, histtype="stepfilled")
