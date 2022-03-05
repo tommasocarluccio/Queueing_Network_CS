@@ -14,7 +14,29 @@ def build_OD(n_zones, cycles=False):
     matrix=matrix/matrix.sum(axis=1)[:,None]
     #print(matrix)
     #print("eigenvalues:", np.linalg.eig(matrix)[0])
-    return matrix
+    return np.round(matrix,4)
+
+def build_distance_matrix(n_zones,n_charging_stations,zones_with_charging_stations):
+    sub_matrix=np.random.uniform(low=1, high=10, size=(n_zones,n_zones))
+    np.fill_diagonal(sub_matrix,np.zeros(n_zones))
+    sub_matrix=(sub_matrix + sub_matrix.T)/2
+
+    matrix=np.zeros((n_zones+n_charging_stations,n_zones+n_charging_stations))
+    matrix[0:n_zones,0:n_zones]=sub_matrix
+    
+    for i in range(n_charging_stations):
+        matrix[n_zones+i,:]=matrix[zones_with_charging_stations[i],:]
+        matrix[:,n_zones+i]=matrix[:,zones_with_charging_stations[i]]
+    
+    return np.round(matrix,4)
+
+def compute_charging_rates(n_zones, fluxes, OD_matrix, dist_matrix, vehicles_autonomy):
+    dist_vector=[]
+    rel_flows=np.divide(fluxes,np.sum(fluxes))
+    for i in range(n_zones):
+        dist_vector.append(np.sum(np.multiply(OD_matrix[i,:],dist_matrix[i,:])))
+    charging_rates=np.multiply(dist_vector,rel_flows[0:n_zones])/vehicles_autonomy
+    return charging_rates
     
 def compute_fluxes(n_zones, OD_matrix):
     lambda_vec=np.ones((n_zones)) #initialize vector of flows
@@ -75,23 +97,27 @@ def MS_MVA(n_zones, n_vehicles, service_rates, flows, n_servers):
     for m in range(1,n_vehicles+1):
         for n in range(n_zones):
             ns=int(n_servers[n])
+            correction_factor=0
             if ns!=1: 
-                correction_factor=0
+                """
+                for j in range(ns-1):
+                    #check correction factor
+                    correction_factor+=(ns-j)*p[j,m-1]
+                """
                 for j in range(1,ns):
-                    correction_factor+=(ns-j)*p[ns-j,m-1]
-            else:
-                correction_factor=0
+                    correction_factor+=(ns-j)*p[j-1,m-1]
             average_waiting[n,m]=(1+average_vehicles[n,m-1]+correction_factor)/(service_rates[n]*ns)
         overall_throughput=m/np.sum(np.multiply(average_waiting[:,m],flows))
         average_vehicles[:,m]=np.multiply(flows*overall_throughput,average_waiting[:,m])
         for n in range (n_zones):
             ns=int(n_servers[n])
-            su=0
             if ns!=1:
+                su=0
                 for j in range(1,ns):
-                    p[j,m]=(1/j)*(flows[n]/service_rates[n])*overall_throughput*p[j-1,m-1]
+                    p[j,m]=(1/j)*(flows[n]/(service_rates[n]*ns))*overall_throughput*p[j-1,m-1]
                     su+=(ns-j)*p[j,m]
-            p[0,m]=1-(1/ns)*((flows[n]/service_rates[n])*overall_throughput+su)
+                p[0,m]=1-(1/ns)*(overall_throughput*flows[n]/(service_rates[n]*ns)+su)
+    #print("PP:\n",p)
     return np.round(average_vehicles[:,-1],4), np.round(average_waiting[:,-1],4), np.round(overall_throughput,4)
 
 def compute_generic_pi(vehicles_vector, rho, normalization_constant):
@@ -171,10 +197,10 @@ def plot_pi0(n_zones, n_vehicles_max, rho):
         ax.grid()
         plt.show()
 
-def plot_bar_per_zone(n_zones, avg_vehicles, idle_times, throughputs, utilization, un_demand, lost_requests):
+def plot_bar_per_zone(n_zones, n_charging_zones, avg_vehicles, idle_times, throughputs, utilization, un_demand, lost_requests):
     if avg_vehicles is not None:
         fig11, ax11 = plt.subplots()
-        ax11.bar(np.arange(1,n_zones+1),avg_vehicles)
+        ax11.bar(np.arange(1,n_zones+n_charging_zones+1),avg_vehicles)
         ax11.set_title(f"Average vehicles per zones")
         ax11.set_xlabel("Zone")
         ax11.set_ylabel("Vehicles")
@@ -182,7 +208,7 @@ def plot_bar_per_zone(n_zones, avg_vehicles, idle_times, throughputs, utilizatio
         plt.show()
     if idle_times is not None:
         fig12, ax12 = plt.subplots()
-        ax12.bar(np.arange(1,n_zones+1),idle_times)
+        ax12.bar(np.arange(1,n_zones+n_charging_zones+1),idle_times)
         ax12.set_title(f"Average vehicles idle times per zones")
         ax12.set_xlabel("Zone")
         ax12.set_ylabel("Idle time [s]")
@@ -190,7 +216,7 @@ def plot_bar_per_zone(n_zones, avg_vehicles, idle_times, throughputs, utilizatio
         plt.show()
     if throughputs is not None:
         fig13, ax13 = plt.subplots()
-        ax13.bar(np.arange(1,n_zones+1),throughputs)
+        ax13.bar(np.arange(1,n_zones+n_charging_zones+1),throughputs)
         ax13.set_title(f"Vehicles througput per zones")
         ax13.set_xlabel("Zone")
         ax13.set_ylabel("Throughput")
@@ -198,7 +224,7 @@ def plot_bar_per_zone(n_zones, avg_vehicles, idle_times, throughputs, utilizatio
         plt.show()
     if utilization is not None:
         fig14, ax14 = plt.subplots()
-        ax14.bar(np.arange(1,n_zones+1),utilization)
+        ax14.bar(np.arange(1,n_zones+n_charging_zones+1),utilization)
         ax14.set_title(f"Utilization per zones")
         ax14.set_xlabel("Zone")
         ax14.set_ylabel("Utilization [%]")
@@ -221,13 +247,70 @@ def plot_bar_per_zone(n_zones, avg_vehicles, idle_times, throughputs, utilizatio
         ax16.grid()
         plt.show()
 
+def fluxes(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations, dist_matrix, service_rates, vehicles_autonomy):
+    np.set_printoptions(suppress=True)
+    aug_matrix=np.zeros((n_zones+n_charging_stations,n_zones+n_charging_stations))
+    aug_matrix[0:n_zones,0:n_zones]=OD_matrix
+    for j in range(n_charging_stations):
+        aug_matrix[n_zones+j][zones_with_charging_stations[j]]=1
+    #print("\nAUG:\n", aug_matrix)
+
+    lambda_vec=np.ones((n_zones+n_charging_stations)) #initialize vector of flows
+    #print("lambda init:\n",lambda_vec)
+    num_it=0
+    """
+    #FIRST ITERATION WITH FIXED ALPHA
+    alpha=1
+    flows=np.dot(lambda_vec,aug_matrix) #compute vector of flows
+    if n_charging_stations>0:
+            for i in range(n_charging_stations):
+                correction_coefficient=alpha*flows[zones_with_charging_stations[i]]*(np.sum(np.delete(flows,n_zones+i)/(n_zones+n_charging_stations-1)))
+                aug_matrix[0:n_zones,n_zones+i]=flows[0:n_zones]*correction_coefficient
+            aug_matrix=aug_matrix/aug_matrix.sum(axis=1)[:,None]
+    print("1ST AUG:\n",aug_matrix)
+    """
+    #ITERATE WITH COMPUTED ALPHA FROM CHARGING RATES
+    iterate=True
+    while iterate:
+        flows=np.dot(lambda_vec,aug_matrix) #compute vector of flows
+        #print("\nflooows: ",flows)
+        #print("CH rates:\n", charging_rates)
+        #print("pAUG:\n",aug_matrix)
+        if n_charging_stations>0:
+            charging_rates=compute_charging_rates(n_zones, flows, aug_matrix, dist_matrix, vehicles_autonomy)
+            for i in range(n_charging_stations):
+                #alpha given by charging rate in zone i/service rate in zone i
+                alpha=charging_rates[zones_with_charging_stations[i]]/service_rates[zones_with_charging_stations[i]]
+                #print("alpha: ",alpha)
+                correction_coefficient=alpha*(1/(n_zones+n_charging_stations))*(np.sum(flows)/(n_zones+n_charging_stations))
+                aug_matrix[0:n_zones,n_zones+i]=flows[0:n_zones]*correction_coefficient
+            aug_matrix=aug_matrix/aug_matrix.sum(axis=1)[:,None]
+        #print("AUUUG:\n",aug_matrix)
+        #print("flooows:\n", flows)
+        if (abs(flows-lambda_vec)>10e-4).any(): #check on convergence
+            lambda_vec=flows
+            num_it+=1
+        else:
+            iterate=False
+    #print("augmented OD matrix:\n", aug_matrix)
+    print("num it: ", num_it)
+    return flows, aug_matrix
 
 if __name__=="__main__":
-    np.random.seed(12)
-    n_zones=20+1
+    np.random.seed(42)
+    n_zones=20
     n_vehicles=40
+    n_charging_stations=3
+    outlet_per_stations=3
+    vehicles_autonomy=500
 
-    n_servers=np.ones(n_zones)
+    charging_stations=np.zeros(n_zones)
+    zones_with_charging_stations=np.sort(np.random.choice(charging_stations.shape[0],n_charging_stations,replace=False))
+    print("zones_with_charging_stations", zones_with_charging_stations)
+    charging_stations[np.array(zones_with_charging_stations)]=1 #vector has 1 in position of zones with charging station inside, 0 otherwise
+
+    n_servers=list(np.ones(n_zones))
+    #n_servers=[1,2,4]
     #n_servers[20]=10
     #n_servers[1]=3
     #n_servers[2]=4
@@ -239,21 +322,28 @@ if __name__=="__main__":
 
     #Compute number of possible states
     n_states=scipy.special.binom(n_zones+n_vehicles-1, n_vehicles)
-    print("State space dimension: ", n_states)
+    #print("State space dimension: ", n_states)
 
     #Build OD matrix - True if cycles are admitted
     OD_matrix=build_OD(n_zones, False)
-    #OD_matrix[20,:]=np.zeros(n_zones)
-    #OD_matrix[20,3]=1
-    np.set_printoptions(suppress=True)
     #OD_matrix=np.array([[0, 0.1, 0.9],[0.8, 0, 0.2],[0.7, 0.3, 0]])
-    print("OD:\n", OD_matrix)
+    #print("OD:\n", OD_matrix)
     #Check on eigenvalues of OD matrix 
     #print("Eigenvalues: ", np.linalg.eig(OD_matrix)[0])
+
+    dist_matrix=build_distance_matrix(n_zones,n_charging_stations,zones_with_charging_stations)
+    #print("dist:\n", dist_matrix)
+
+    #flows_plus=fluxes(n_zones,n_charging_stations,OD_matrix,zones_with_charging_stations)
+   
+    #flows=compute_fluxes(n_zones, OD_matrix)
+    #print("relative flow per zone: ", flows)
+
+    flows, aug_OD_matrix=fluxes(n_zones,n_charging_stations,OD_matrix,zones_with_charging_stations, dist_matrix, service_rates, vehicles_autonomy)
+    #flows_plus=aug_fluxes(n_zones,n_charging_stations,OD_matrix,zones_with_charging_stations,flows)
+    print("!!", flows)
     
-    flows=compute_fluxes(n_zones, OD_matrix)
-    print("relative flow per zone: ", flows)
-    
+    """
     #Mean Value Analysis of the network
     #flows=np.array([0.843,0.843,0.422])
     av_vehicles, av_waiting, ov_throughput=MVA(n_zones, n_vehicles, service_rates, flows)
@@ -275,20 +365,31 @@ if __name__=="__main__":
     lost_requests_per_zone=np.round(np.multiply(unsatisfied_demand_per_zone,service_rates),4)
     print("Requests lost per unit time per zone: ", lost_requests_per_zone)
     print("Total requests lost: ",np.round(np.sum(lost_requests_per_zone),4))
-
+    """
+    
+    charging_rates=compute_charging_rates(n_zones,flows,aug_OD_matrix,dist_matrix,vehicles_autonomy)
+    service_rates_aug=list(service_rates)
+    for i in zones_with_charging_stations:
+        n_servers.append(outlet_per_stations)
+        service_rates_aug.append(charging_rates[i]/outlet_per_stations)
+    n_servers=np.array(n_servers)
+    service_rates_aug=np.array(service_rates_aug)
+    print("\nNew service rates: ",service_rates_aug)
+    print("Servers per zone:", n_servers)
+    
     #Multi-Server Mean Value Analysis of the network
-    av_vehicles, av_waiting, ov_throughput=MS_MVA(n_zones, n_vehicles, service_rates, flows, n_servers)
+    av_vehicles, av_waiting, ov_throughput=MS_MVA(n_zones+n_charging_stations, n_vehicles, service_rates_aug, flows, n_servers)
     throughput_vector=np.round(ov_throughput*flows,4)
-    print("\n\n2. Average vehicles vector: ", av_vehicles)
+    print("\nAverage vehicles vector: ", av_vehicles)
     print("Average vehicles idle time vector: ", av_waiting)
     print("Overall throughput (constant for the flow calculation): ", ov_throughput)
     print("Throughputs vector (Real flows): ", throughput_vector)
     
     #compute utilization vector (rho) with computed flows and service rates
-    rho=np.round(np.divide(throughput_vector,service_rates),4)
+    rho=np.round(np.divide(throughput_vector,np.multiply(service_rates_aug,n_servers)),4)
     print("rho (utilization) per zone: ", rho)
 
-    unsatisfied_demand_per_zone=((1-rho))
+    unsatisfied_demand_per_zone=((1-rho[0:n_zones]))
     np.set_printoptions(suppress=True)
     print(f"Percentage of unsatisfied demand per zone: {unsatisfied_demand_per_zone*100}%")
     print(f"Average demand lost: {np.round(np.sum(unsatisfied_demand_per_zone*100)/n_zones,2)}%")
@@ -296,7 +397,6 @@ if __name__=="__main__":
     lost_requests_per_zone=np.round(np.multiply(unsatisfied_demand_per_zone,service_rates),4)
     print("Requests lost per unit time per zone: ", lost_requests_per_zone)
     print("Total requests lost: ",np.round(np.sum(lost_requests_per_zone),4))
-
 
     #convolutional algorithm for the normalization constant (used for distribution calculations)
     normalization_constant=compute_normalization_constant(n_zones, n_vehicles, rho)
@@ -333,7 +433,7 @@ if __name__=="__main__":
     plt.show()
 
     #bar chart with zones parameters (set to None to avoid plotting)
-    #plot_bar_per_zone(n_zones, av_vehicles, av_waiting, throughput_vector, rho, unsatisfied_demand_per_zone, lost_requests_per_zone)
+    #plot_bar_per_zone(n_zones, n_charging_stations, av_vehicles, av_waiting, throughput_vector, rho, unsatisfied_demand_per_zone, lost_requests_per_zone)
 
     #print(MS_AMVA2(n_zones, n_vehicles, service_rates, flows, n_servers, 45, 0.7))
    
@@ -366,5 +466,4 @@ if __name__=="__main__":
     ax2.grid()
     ax2.legend()
     plt.show()
-
-"""
+    """
