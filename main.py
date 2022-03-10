@@ -313,6 +313,7 @@ def fluxes(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations
                 #aug_matrix[0:n_zones,n_zones+i]=flows[0:n_zones]*correction_coefficient
                 """
                 #DEFINE ENTRIES OF OD MATRIX CORRESPONDING TO CS COLUMNS AS FUNCTION OF COMPUTE CHARGING FLOWS
+                #avg_network_flow=np.sum(flows)/(n_zones+n_charging_stations)
                 aug_matrix[0:n_zones,n_zones+i]=charging_flows[zones_with_charging_stations[i]]/(flows[0:n_zones]*n_zones)
             #IMPOSE STHOCASTICITY
             aug_matrix=aug_matrix/aug_matrix.sum(axis=1)[:,None]
@@ -435,6 +436,34 @@ if __name__=="__main__":
     ax4.legend(loc='upper left')
     plt.show()
 
+    fig5, ax5=plt.subplots()
+    for _vehicles_autonomy in [200,300,400]:
+        _flows, _aug_OD=fluxes(n_zones,n_charging_stations,OD_matrix,zones_with_charging_stations,dist_matrix,service_rates[0:n_zones],_vehicles_autonomy)
+        _av_vehicles, _av_delay, _ov_throughput=MS_MVA(n_zones+n_charging_stations, n_vehicles, service_rates, _flows, n_servers)
+        ax5.bar(np.arange(1,n_charging_stations+1),_av_vehicles[n_zones:n_zones+n_charging_stations], label=f'v autonomy: {_vehicles_autonomy}', alpha=_vehicles_autonomy/410)
+    ax5.scatter(np.arange(1,n_charging_stations+1),n_servers[n_zones:n_zones+n_charging_stations], label=f'n servers', color='red',marker='_')
+    ax5.set_title("Average number of vehicles in Charging station")
+    ax5.set_xlabel("Charging  stations")
+    ax5.set_ylabel("Vehicles")
+    ax5.grid()
+    ax5.legend()
+    plt.show()
+
+    fig6, (ax61,ax62)=plt.subplots(2,1, sharex=True)
+    ax61.bar(np.arange(1,n_charging_stations+1),_av_vehicles[n_zones:n_zones+n_charging_stations])
+    ax61.scatter(np.arange(1,n_charging_stations+1),n_servers[n_zones:n_zones+n_charging_stations], label=f'n servers', color='red',marker='_')
+    ax62.bar(np.arange(1,n_charging_stations+1),waiting_p, color='green')
+    fig6.suptitle("Vehicles and waiting proability in charging stations")
+    ax61.set_title("Average number of vehicles per charging station")
+    ax62.set_title("Vehicles waiting probability per charging station")
+    ax62.set_xlabel("Charging stations")
+    ax61.set_ylabel("Vehicles")
+    ax62.set_ylabel("Probability")
+    ax61.grid()
+    ax62.grid()
+    fig6.legend()
+    plt.show()
+
     #cumulative distribution histogram of unsatisfied demand
     fig3, ax3 = plt.subplots()
     ax3.hist(unsatisfied_demand_per_zone, bins=30, cumulative=True, density=True, histtype='stepfilled' )
@@ -444,7 +473,7 @@ if __name__=="__main__":
     plt.show()
 
     #bar chart with zones parameters (set to None to avoid plotting)
-    plot_bar_per_zone(n_zones, n_charging_stations, av_vehicles, av_delay, av_waiting, throughput_vector, rho, unsatisfied_demand_per_zone, lost_requests_per_zone)
+    #plot_bar_per_zone(n_zones, n_charging_stations, av_vehicles, av_delay, av_waiting, throughput_vector, rho, unsatisfied_demand_per_zone, lost_requests_per_zone)
     
     """
     ## CUST EXAMPLE
