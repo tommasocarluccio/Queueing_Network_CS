@@ -45,7 +45,6 @@ def compute_charging_flows(n_zones, fluxes, OD_matrix, dist_matrix, dist_autonom
     charging_flows=np.array(dist_vector)/dist_autonomy
     return charging_flows
     
-
 def compute_fluxes(n_zones, OD_matrix):
     lambda_vec=np.ones((n_zones)) #initialize vector of flows
     num_it=0
@@ -425,6 +424,14 @@ def plot_city_zones(grid, zones_with_charging_stations_ID, annotate=False):
         plt.legend()
         plt.show()
 
+def generate_data(n_zones):
+    n_zones=n_zones
+    zone_rates=np.random.randint(low=1, high=5, size=n_zones)
+    OD_matrix=build_OD(n_zones, True)
+    city_grid=None
+
+    return city_grid, n_zones, OD_matrix, zone_rates
+
 def get_data_from_file(grid_pickle_file, data_pickle_file):
     bookings_data=pd.read_pickle(data_pickle_file)
     if grid_pickle_file!=None:
@@ -499,20 +506,22 @@ def get_data_from_OD_file(csv_file):
 
 if __name__=="__main__":
     np.random.seed(42)
+    np.set_printoptions(suppress=True)
     plot=True
     print_data=True
     print_stat=True
 
-    #GET DATA FROM OD OR BOOKINGS AND GRID FILE
-    city_grid, n_zones, OD_from_file, zone_rates_from_file=get_data_from_OD_file("L_12_OD.csv")
-    #city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_data_from_file("city_grid.pickle","bookings_train.pickle")
+    #GENERATE OR GET DATA FROM OD OR BOOKINGS AND GRID FILE
+    #city_grid, n_zones, OD_from_file, zone_rates_from_file=generate_data(300)
+    #city_grid, n_zones, OD_from_file, zone_rates_from_file=get_data_from_OD_file("L_12_OD.csv")
+    city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_data_from_file("city_grid.pickle","bookings_train.pickle")
     
     #n_zones=300
     n_vehicles=300
-    range_vehicles=[300,450,600]
+    range_vehicles=[200,300,400]
     n_charging_stations=20
     #dist_autonomy=300
-    #range_v_autonomy=[200,400,600]
+    #range_v_autonomy=[100,150,200]
     #trips_autonomy=40
     range_trips=[20,40,60]
 
@@ -521,9 +530,9 @@ if __name__=="__main__":
     min_charging_th=0.2
     max_charging_th=0.8
     battery_capacity_reduced=battery_capacity*(max_charging_th-min_charging_th)
-    av_consumption=0.16 #kWh/km 
+    av_consumption=0.17 #kWh/km 
     dist_autonomy=battery_capacity_reduced/av_consumption #km
-    av_trip_length=3.5 #km
+    av_trip_length=4 #km
     trips_autonomy=dist_autonomy/av_trip_length
     
     #CS parameters
@@ -531,7 +540,6 @@ if __name__=="__main__":
     outlet_rate=outlet_power/battery_capacity_reduced #hourly rate of charging operation
     outlet_per_stations=2
     
-    np.set_printoptions(suppress=True)
     ## ASSIGN CHARGING STATIONS TO ZONE
     zones_with_charging_stations=np.sort(np.random.choice(n_zones,n_charging_stations,replace=False))
 
@@ -574,6 +582,8 @@ if __name__=="__main__":
     flows, aug_OD_matrix=total_fluxes(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations, trips_autonomy, dist_autonomy, dist_matrix)
 
     if print_data:
+        print("Number of zones: ", n_zones)
+        print("Numbber of vehicles: ", n_vehicles)
         print("Trips autonomy: ", np.round(trips_autonomy,2))
         print(f"Distance autonomy: {np.round(dist_autonomy,2)} km")
         print(f"Charging rates: {np.round(outlet_rate,2)}/h")
@@ -603,7 +613,6 @@ if __name__=="__main__":
     
     #Compute unsatisfied demand and mobility requests for mobility zones only
     unsatisfied_demand_per_zone=((1-rho[0:n_zones]))
-    np.set_printoptions(suppress=True)
     #print(f"\nPercentage of unsatisfied demand per zone: {unsatisfied_demand_per_zone*100}%")
     #print(f"Average demand lost: {np.round(np.sum(unsatisfied_demand_per_zone*100)/n_zones,2)}%")
 
