@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 import geopandas as gpd
+from haversine import haversine, Unit
+from shapely.geometry import Point, LineString, Polygon
 
 def build_OD(n_zones, cycles=False):
     matrix = np.random.rand(n_zones,n_zones)
@@ -413,8 +415,8 @@ def plot_city_zones(grid, zones_with_charging_stations_ID, annotate=False):
         plt.ylabel(None)
         plt.yticks([])
         grid.plot(color="white", edgecolor="black", ax=ax)
-        CS_zones=grid.loc[grid['zone_id'].isin(zones_with_charging_stations_ID)]
-        CS_zones.plot(color="red", edgecolor="black", ax=ax, label='zones with Charging Stations')
+        #CS_zones=grid.loc[grid['zone_id'].isin(zones_with_charging_stations_ID)]
+        #CS_zones.plot(color="red", edgecolor="black", ax=ax, label='zones with Charging Stations')
         grid['coords'] = grid['geometry'].apply(lambda x: x.centroid.coords[0])
         if annotate:
             for idx, row in grid.iterrows():
@@ -432,6 +434,77 @@ def generate_data(n_zones):
 
     return city_grid, n_zones, OD_matrix, zone_rates
 
+def create_grid_and_map_data(data_csv_file):
+    minLon= 7.606611999999998
+    minLat= 45.01059
+    shiftLon= 0.006367891313992268
+    shiftLat= 0.0045050811767578134
+    maxLon=7.727551
+    maxLat=45.188786
+    bookings_df=pd.read_csv(data_csv_file)
+    #bookings_df=bookings_df.loc[(bookings_df['duration']>3*60) & (bookings_df['duration']<60*60)]
+    #bookings_df=bookings_df.loc[bookings_df['distance']>500]
+    bookings_df=bookings_df.loc[(bookings_df['init_lon']>minLon)&(bookings_df['init_lon']<maxLon)]
+    bookings_df=bookings_df.loc[(bookings_df['final_lon']>minLon)&(bookings_df['final_lon']<maxLon)]
+    bookings_df=bookings_df.loc[(bookings_df['init_lat']>minLat)&(bookings_df['init_lat']<maxLat)]
+    bookings_df=bookings_df.loc[(bookings_df['final_lat']>minLat)&(bookings_df['final_lat']<maxLat)]
+    grid = get_city_grid_as_gdf(
+            (
+                min(bookings_df.init_lon.min(), bookings_df.final_lon.min()),
+                min(bookings_df.init_lat.min(), bookings_df.final_lat.min()),
+                max(bookings_df.init_lon.max(), bookings_df.final_lon.max()),
+                max(bookings_df.init_lat.max(), bookings_df.final_lat.max())
+            ),"epsg:4326", 500
+        )
+    grid["zone_id"] = grid.index.values
+    grid.to_pickle("new_grid.pickle")
+    #associate zone id to bookings origin and destination
+    origin_points = gpd.GeoDataFrame(geometry=gpd.points_from_xy(bookings_df['init_lon'], bookings_df['init_lat'], crs="EPSG:4326"))
+    trips_origin=gpd.sjoin(origin_points,grid,how='left',op='intersects')
+    bookings_df["origin_id"] = trips_origin['zone_id']
+    bookings_df['origin_point']= trips_origin.geometry
+    dest_points = gpd.GeoDataFrame(geometry=gpd.points_from_xy(bookings_df['final_lon'], bookings_df['final_lat'], crs="EPSG:4326"))
+    trips_dest=gpd.sjoin(dest_points,grid,how='left',op='intersects')
+    bookings_df["destination_id"] = trips_dest.zone_id
+    bookings_df['dest_point']= trips_dest.geometry
+    bookings_df=bookings_df.dropna()
+    bookings_df['line'] = bookings_df.apply(lambda row: LineString([row['origin_point'], row['dest_point']]), axis=1)
+    bookings_df.to_csv("trips_with_zone_id.csv")
+
+def get_city_grid_as_gdf(total_bounds, crs, bin_side_length):
+    x_min, y_min, x_max, y_max = total_bounds
+
+    # this has to be pretty much the same long all the longitudes, cause paralles are equidistant, so equal for every city
+    p1 = (y_min, x_min)
+    p2 = (y_min + 0.01, x_min)
+    height_001 = haversine(p1, p2, unit=Unit.METERS)
+    height = (0.01 * bin_side_length) / height_001
+
+    # width changes depending on the city, casuse longitude distances vary depending on the latitude.
+    p1 = (y_min, x_min)
+    p2 = (y_min, x_min + 0.01)
+    width_001 = haversine(p1, p2, unit=Unit.METERS)
+    width = (0.01 * bin_side_length) / width_001
+
+    rows = int(np.ceil((y_max - y_min) / height))
+    cols = int(np.ceil((x_max - x_min) / width))
+    x_left = x_min
+    x_right = x_min + width
+    polygons = []
+    for i in range(cols):
+        y_top = y_max
+        y_bottom = y_max - height
+        for j in range(rows):
+            polygons.append(Polygon([(x_left, y_top), (x_right, y_top), (x_right, y_bottom), (x_left, y_bottom)]))
+            y_top = y_top - height
+            y_bottom = y_bottom - height
+        x_left = x_left + width
+        x_right = x_right + width
+    grid = gpd.GeoDataFrame({"geometry": polygons})
+    grid["zone_id"] = range(len(grid))
+    grid.crs = crs
+    return grid
+    
 def get_data_from_file(grid_pickle_file, data_pickle_file):
     bookings_data=pd.read_pickle(data_pickle_file)
     if grid_pickle_file!=None:
@@ -479,6 +552,83 @@ def get_data_from_file(grid_pickle_file, data_pickle_file):
      
     return city_grid, n_zones, zones_id_dict, OD_matrix, zones_service_rates
 
+def get_balance_OD(grid_pickle, data_csv):
+    bookings_df=pd.read_csv(data_csv)
+    #get zones
+    zones_id=np.unique(bookings_df[['origin_id', 'destination_id']].values).astype(int)
+    zones_id=np.sort(zones_id)
+    n_zones=zones_id.size
+    #get grid with only valid zones
+    if grid_pickle!=None:
+        city_grid = pd.read_pickle(grid_pickle)
+        city_grid=city_grid.loc[city_grid['zone_id'].isin(zones_id)]
+    else:
+        city_grid=None
+    #create dicr of zones for OD-grid
+    zones_id_dict={} #map index of OD matrix to zone indexes
+    for i in range(n_zones):
+        zones_id_dict[i]=zones_id[i]
+    inv_zones_id_dict = {v: k for k, v in zones_id_dict.items()}
+    #filter bookings data
+    bookings_df=bookings_df.loc[(bookings_df['duration']>3*60) & (bookings_df['duration']<60*60)]
+    bookings_df=bookings_df.loc[bookings_df['distance']>500]
+    #df for OD
+    bookings_data_OD=bookings_df[['origin_id','destination_id']]
+    bookings_data_OD_grouped=bookings_data_OD.groupby(['origin_id','destination_id']).size().reset_index(name='counts')
+    OD_matrix=np.zeros((n_zones,n_zones))
+    for index, row in bookings_data_OD_grouped.iterrows():
+        OD_matrix[inv_zones_id_dict[row['origin_id']],inv_zones_id_dict[row['destination_id']]]=row['counts']
+    #df for demand rates
+    bookings_df['start_date'] = pd.to_datetime(bookings_df['init_time'],unit='s').dt.date
+    bookings_df['start_hour'] = pd.to_datetime(bookings_df['init_time'],unit='s').dt.hour
+    bookings_df_rate=bookings_df.groupby(['origin_id','start_date','start_hour']).size().reset_index(name='counts')
+    bookings_df_rate=bookings_df_rate.groupby(['origin_id','start_date']).agg(date_mean=("counts",'mean'))
+    bookings_df_rate=bookings_df_rate.groupby('origin_id').agg(mean_service_time=('date_mean','mean'))
+    #print(bookings_df_rate)
+    zones_service_rates=np.array(bookings_df_rate['mean_service_time'])
+    OD_matrix=OD_matrix/OD_matrix.sum(axis=1)[:,None]
+     
+    return city_grid, n_zones, zones_id_dict, OD_matrix, zones_service_rates
+
+def get_hour_OD(grid_pickle, data_csv, hour_of_day):
+    bookings_df=pd.read_csv(data_csv)
+    #get zones
+    zones_id=np.unique(bookings_df[['origin_id', 'destination_id']].values).astype(int)
+    zones_id=np.sort(zones_id)
+    n_zones=zones_id.size
+    #get grid with only valid zones
+    if grid_pickle!=None:
+        city_grid = pd.read_pickle(grid_pickle)
+        city_grid=city_grid.loc[city_grid['zone_id'].isin(zones_id)]
+    else:
+        city_grid=None
+    #create dicr of zones for OD-grid
+    zones_id_dict={} #map index of OD matrix to zone indexes
+    for i in range(n_zones):
+        zones_id_dict[i]=zones_id[i]
+    inv_zones_id_dict = {v: k for k, v in zones_id_dict.items()}
+    #filter bookings data
+    bookings_df=bookings_df.loc[(bookings_df['duration']>3*60) & (bookings_df['duration']<60*60)]
+    bookings_df=bookings_df.loc[bookings_df['distance']>500]
+    bookings_df['start_date'] = pd.to_datetime(bookings_df['init_time'],unit='s').dt.date
+    bookings_df['start_hour'] = pd.to_datetime(bookings_df['init_time'],unit='s').dt.hour
+    bookings_df=bookings_df.loc[bookings_df['start_hour']==hour_of_day]
+    #df for OD
+    bookings_data_OD=bookings_df[['origin_id','destination_id']]
+    bookings_data_OD_grouped=bookings_data_OD.groupby(['origin_id','destination_id']).size().reset_index(name='counts')
+    OD_matrix=np.zeros((n_zones,n_zones))
+    for index, row in bookings_data_OD_grouped.iterrows():
+        OD_matrix[inv_zones_id_dict[row['origin_id']],inv_zones_id_dict[row['destination_id']]]=row['counts']
+    zones_service_rates=np.zeros(n_zones)
+    for i in range (n_zones):
+        if np.sum(OD_matrix[i,:])==0:
+            OD_matrix[i][i]=1
+    for i in range(n_zones):
+        zones_service_rates[i]=np.sum(OD_matrix[i,:])
+    OD_matrix=OD_matrix/OD_matrix.sum(axis=1)[:,None]
+
+    return city_grid, n_zones, zones_id_dict, OD_matrix, zones_service_rates
+
 def get_data_from_OD_file(csv_file):
     city_grid=None
     OD=pd.read_csv(csv_file, sep=";")
@@ -501,9 +651,7 @@ def get_data_from_OD_file(csv_file):
         else:
             OD_matrix[i,i]=1
     return city_grid, n_zones, OD_matrix, zone_rates
-    #print(OD)
     
-
 if __name__=="__main__":
     np.random.seed(42)
     np.set_printoptions(suppress=True)
@@ -511,15 +659,21 @@ if __name__=="__main__":
     print_data=True
     print_stat=True
 
+    #create_grid_and_map_data("trips_with")
+    
     #GENERATE OR GET DATA FROM OD OR BOOKINGS AND GRID FILE
     #city_grid, n_zones, OD_from_file, zone_rates_from_file=generate_data(300)
     #city_grid, n_zones, OD_from_file, zone_rates_from_file=get_data_from_OD_file("L_12_OD.csv")
-    city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_data_from_file("city_grid.pickle","bookings_train.pickle")
+    #city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_data_from_file("city_grid.pickle","bookings_train.pickle")
+
+    city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_balance_OD("new_grid.pickle","trips_with_zone_id.csv")
+    #city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_hour_OD("new_grid.pickle","trips_with_zone_id.csv",12)
+    #plot_city_zones(city_grid,[],True)
     
     #n_zones=300
     n_vehicles=300
-    range_vehicles=[200,300,400]
-    n_charging_stations=20
+    range_vehicles=[200,400,600]
+    n_charging_stations=10
     #dist_autonomy=300
     #range_v_autonomy=[100,150,200]
     #trips_autonomy=40
@@ -628,7 +782,7 @@ if __name__=="__main__":
         zones_with_charging_stations_ID=[]
         for zone in zones_with_charging_stations:
             zones_with_charging_stations_ID.append(zones_id_dict[zone])  
-        #plot_city_zones(city_grid, zones_with_charging_stations_ID, False)
+        plot_city_zones(city_grid, zones_with_charging_stations_ID, True)
         #build df with statistics over city grid
         city_grid_data=city_grid.copy()
         city_grid_CS_data=city_grid.loc[city_grid['zone_id'].isin(zones_with_charging_stations_ID)]
