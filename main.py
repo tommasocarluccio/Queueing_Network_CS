@@ -494,7 +494,7 @@ def create_grid_and_map_data(city_name, cities_info_file, data_csv_file,zone_siz
     bookings_df=bookings_df.loc[(bookings_df['final_lon']>minLon)&(bookings_df['final_lon']<maxLon)]
     bookings_df=bookings_df.loc[(bookings_df['init_lat']>minLat)&(bookings_df['init_lat']<maxLat)]
     bookings_df=bookings_df.loc[(bookings_df['final_lat']>minLat)&(bookings_df['final_lat']<maxLat)]
-    grid = get_city_grid_as_gdf(
+    rows, cols, grid = get_city_grid_as_gdf(
             (
                 min(bookings_df.init_lon.min(), bookings_df.final_lon.min()),
                 min(bookings_df.init_lat.min(), bookings_df.final_lat.min()),
@@ -550,7 +550,7 @@ def get_city_grid_as_gdf(total_bounds, crs, bin_side_length):
     grid = gpd.GeoDataFrame({"geometry": polygons})
     grid["zone_id"] = range(len(grid))
     grid.crs = crs
-    return grid
+    return rows, cols, grid
     
 def get_data_from_file(grid_pickle_file, data_pickle_file):
     bookings_data=pd.read_pickle(data_pickle_file)
@@ -653,9 +653,11 @@ def get_hour_OD(grid_pickle, data_csv, hour_of_day, week_day=False):
         bookings_df=bookings_df.loc[bookings_df['weekday'].isin([0,1,2,3,4])]
     try:
         bookings_df=bookings_df.loc[bookings_df['start_hour']==hour_of_day]
+        interval_size=1
         print(f"Single hour bookings h:{hour_of_day}\n")
     except:
         bookings_df=bookings_df.loc[bookings_df['start_hour'].isin(hour_of_day)]
+        interval_size=len(hour_of_day)
         print(f"Interval of hours bookings h:{hour_of_day}\n")
     print("Number of entries in filtered dataframe: ", len(bookings_df.index))
 
@@ -694,8 +696,12 @@ def get_hour_OD(grid_pickle, data_csv, hour_of_day, week_day=False):
 
     #df for service rates
     bookings_df_rate=bookings_df.groupby(['origin_id','start_date','start_hour']).size().reset_index(name='counts')
-    bookings_df_rate=bookings_df_rate.groupby(['origin_id','start_date']).agg(date_mean=("counts",'mean'))
+    #print(bookings_df_rate)
+    bookings_df_rate=bookings_df_rate.groupby(['origin_id','start_date']).agg(date_mean=("counts",'sum'))
+    bookings_df_rate['date_mean']=bookings_df_rate['date_mean']/interval_size
+    #print(bookings_df_rate)
     bookings_df_rate=bookings_df_rate.groupby('origin_id').agg(mean_service_time=('date_mean','mean'))
+    #print(bookings_df_rate)
     bookings_df_rate=bookings_df_rate.reindex(zones_id, fill_value=0.1)
     #zones_service_rates=np.zeros(n_zones)
     zones_service_rates=np.array(bookings_df_rate['mean_service_time'])
@@ -923,7 +929,7 @@ def place_CS_by(city_grid_data, zones_id_dict, n_charging_stations, order_by='th
 if __name__=="__main__":
     np.random.seed(12)
     np.set_printoptions(suppress=True)
-    plot=True
+    plot=False
     print_input_data=False
     print_results=False
 
@@ -935,12 +941,12 @@ if __name__=="__main__":
     #city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_data_from_file("city_grid.pickle","bookings_train.pickle")
 
     #city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_balance_OD("new_grid.pickle","trips_with_zone_id.csv")
-    city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file, tot_departure_per_zone, tot_arrival_per_zone=get_hour_OD("new_grid.pickle","trips_with_zone_id.csv",np.arange(0,24),True)
+    city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file, tot_departure_per_zone, tot_arrival_per_zone=get_hour_OD("new_grid.pickle","trips_with_zone_id.csv",12,True)
     #plot_city_zones(city_grid,[],True)
     
     #n_zones=300
-    n_vehicles=300
-    range_vehicles=[200,400,600]
+    n_vehicles=400
+    range_vehicles=[300,500,700]
     n_charging_stations=10
     #dist_autonomy=300
     #range_v_autonomy=[100,150,200]
