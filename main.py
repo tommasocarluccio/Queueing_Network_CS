@@ -330,6 +330,14 @@ def total_fluxes(n_zones, n_charging_stations, OD_matrix, zones_with_charging_st
     while iterate:
         flows=np.dot(lambda_vec,aug_matrix)#compute vector of flows
         #print(f"flows it{num_it}: {flows}")
+        tot_CS_flows=0
+        for i in zones_with_charging_stations:
+            tot_CS_flows+=flows[i]
+        print("CS flows: ",tot_CS_flows)
+        tot_flows=np.sum(flows)
+        #print("tot flows: ", tot_flows)
+        k=(1/trips_autonomy)/(tot_CS_flows/tot_flows)
+        print("K: ", k)
         """
         v, w, t=MS_MVA(n_zones+n_charging_stations, n_vehicles, service_rates, flows, n_servers)
         th_vec=t*flows
@@ -356,7 +364,7 @@ def total_fluxes(n_zones, n_charging_stations, OD_matrix, zones_with_charging_st
                 aug_matrix[0:n_zones,zones_with_charging_stations[i]]=OD_matrix[0:n_zones,zones_with_charging_stations[i]]*(1-k)
                 aug_matrix[0:n_zones,n_zones+i]=OD_matrix[0:n_zones,zones_with_charging_stations[i]]*k
             #print("Aug:\n", aug_matrix)
-        if (abs(flows-lambda_vec)>10e-4).any(): #check on convergence
+        if (abs(flows-lambda_vec)>10e-3).any(): #check on convergence
             lambda_vec=flows
             num_it+=1
         else:
@@ -374,6 +382,58 @@ def total_fluxes(n_zones, n_charging_stations, OD_matrix, zones_with_charging_st
     charging_flows=compute_charging_flows(n_zones,flows,aug_OD_matrix,dist_matrix,dist_autonomy) #charging rates at steady state
     #print("charging rates: ",charging_flows)
     """
+def fluxes_with_reloc4charg(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations, trips_autonomy):
+    aug_matrix=np.zeros((n_zones+n_charging_stations,n_zones+n_charging_stations))
+    aug_matrix[0:n_zones,0:n_zones]=OD_matrix
+    zones_list=list(np.arange(0,n_zones))
+    zones_without_CS=[zone for zone in zones_list if zone not in zones_with_charging_stations]
+    #define only element in the CS row equal to one corresponding to its zone
+    for j in range(n_charging_stations):
+        aug_matrix[n_zones+j][zones_with_charging_stations[j]]=1
+        #aug_matrix[0:n_zones,n_zones+j]=1
+    #print("\nAUG:\n", aug_matrix)
+    lambda_vec=np.random.rand(n_charging_stations+n_zones)
+    lambda_vec=lambda_vec/(np.sum(lambda_vec))
+    #print("lam: ",lambda_vec)
+    #print("sumlam: ",np.sum(lambda_vec))
+    #lambda_vec=np.ones((n_zones+n_charging_stations))/(n_zones+n_charging_stations) #initialize vector of flows
+    num_it=0
+    k=1/trips_autonomy
+    #ITERATE TO FIND FLOWS AT STEADY STATE
+    iterate=True
+    while iterate:
+        flows=np.dot(lambda_vec,aug_matrix)#compute vector of flows
+        #print(f"flows it{num_it}: {flows}")
+        if n_charging_stations>0:
+            #redirect flow from each zone to CS
+            for i in range(len(zones_with_charging_stations)):
+                #correct OD matrix with k
+                #fluxes directed to the zone with CS inside
+                aug_matrix[0:n_zones,n_zones+i]=OD_matrix[0:n_zones,zones_with_charging_stations[i]]*k
+                for j in range(len(zones_without_CS)):
+                    #fluxes directed to zones WITHOUT CS inside
+                    aug_matrix[0:n_zones,n_zones+i]=aug_matrix[0:n_zones,n_zones+i]+OD_matrix[0:n_zones,zones_without_CS[j]]*(k/n_charging_stations)
+            aug_matrix[0:n_zones,0:n_zones]=OD_matrix[0:n_zones,0:n_zones]*(1-k)
+                    
+            #print("Aug:\n", aug_matrix)
+        if (abs(flows-lambda_vec)>10e-3).any(): #check on convergence
+            lambda_vec=flows
+            num_it+=1
+        else:
+            iterate=False
+    #print("augmented OD matrix:\n", aug_matrix)
+    #print("num it: ", num_it)
+    return flows, aug_matrix
+def find_closest_CS(zones_with_CS, city_grid, zones_id_dict):
+    grid_with_CS=[zones_id_dict[i] for i in zones_with_CS]
+    grid_with_CS_geo=city_grid.loc[city_grid.index.isin(grid_with_CS)]['geometry']
+    #grid_with_CS_geo=grid_with_CS_geo.centroid
+    nearest_CS=[]
+    for zone in city_grid.geometry:
+        nearest_CS.append(grid_with_CS_geo.distance(zone.centroid).sort_values().index[0])
+    print(nearest_CS)
+    print(len(nearest_CS))
+    return nearest_CS
 #COPUTE FLUXES IN NETWORK WITH CS (old version)
 def fluxes(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations, dist_matrix, service_rates, dist_autonomy):
     #compute fluxes including approximation for charging-station queues
@@ -696,12 +756,12 @@ def get_hour_OD(grid_pickle, data_csv, hour_of_day, week_day=False):
 
     #df for service rates
     bookings_df_rate=bookings_df.groupby(['origin_id','start_date','start_hour']).size().reset_index(name='counts')
-    #print(bookings_df_rate)
+    print(bookings_df_rate)
     bookings_df_rate=bookings_df_rate.groupby(['origin_id','start_date']).agg(date_mean=("counts",'sum'))
     bookings_df_rate['date_mean']=bookings_df_rate['date_mean']/interval_size
-    #print(bookings_df_rate)
+    print(bookings_df_rate)
     bookings_df_rate=bookings_df_rate.groupby('origin_id').agg(mean_service_time=('date_mean','mean'))
-    #print(bookings_df_rate)
+    print(bookings_df_rate)
     bookings_df_rate=bookings_df_rate.reindex(zones_id, fill_value=0.1)
     #zones_service_rates=np.zeros(n_zones)
     zones_service_rates=np.array(bookings_df_rate['mean_service_time'])
@@ -740,23 +800,26 @@ def print_data(n_zones, n_vehicles, trips_autonomy, dist_autonomy, outlet_rate, 
         print("Zones with charging stations", zones_with_charging_stations)
         print("Charging outlet per station: ", outlet_per_stations)
 
-def steady_state_analysis(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations, trips_autonomy, dist_autonomy, dist_matrix):
+def steady_state_analysis(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations, trips_autonomy, dist_autonomy, dist_matrix, reloc4charg=False):
+    if reloc4charg:
+        flows, aug_OD_matrix=fluxes_with_reloc4charg(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations, trips_autonomy)
+    else:
         flows, aug_OD_matrix=total_fluxes(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations, trips_autonomy, dist_autonomy, dist_matrix)
-         ## MS_MVA - Multi-Server Mean Value Analysis of the network
-        av_vehicles, av_delay, ov_throughput=MS_MVA(n_zones+n_charging_stations, n_vehicles, service_rates, flows, n_servers)
-        throughput_vector=ov_throughput*flows
-        av_waiting=av_delay-(1/service_rates)
-        #compute utilization vector (rho) with computed flows and service rates
-        rho=np.divide(throughput_vector,np.multiply(service_rates,n_servers))
-        #rho=np.round(np.divide(throughput_vector,service_rates),4)
-        #Compute unsatisfied demand and mobility requests for mobility zones only
-        unsatisfied_demand_per_zone=((1-rho[0:n_zones]))
-        #print(f"\nPercentage of unsatisfied demand per zone: {unsatisfied_demand_per_zone*100}%")
-        #print(f"Average demand lost: {np.round(np.sum(unsatisfied_demand_per_zone*100)/n_zones,2)}%")
-        lost_requests_per_zone=np.round(np.multiply(unsatisfied_demand_per_zone,service_rates[0:n_zones]),4)
-        #print("Requests lost per unit time per zone: ", lost_requests_per_zone)
-        #print("Total requests lost per unit time: ",np.round(np.divide(np.sum(lost_requests_per_zone),np.sum(service_rates[0:n_zones])),4))
-        return flows, aug_OD_matrix, av_vehicles, av_delay, ov_throughput, throughput_vector, av_waiting, rho, unsatisfied_demand_per_zone, lost_requests_per_zone
+        ## MS_MVA - Multi-Server Mean Value Analysis of the network
+    av_vehicles, av_delay, ov_throughput=MS_MVA(n_zones+n_charging_stations, n_vehicles, service_rates, flows, n_servers)
+    throughput_vector=ov_throughput*flows
+    av_waiting=av_delay-(1/service_rates)
+    #compute utilization vector (rho) with computed flows and service rates
+    rho=np.divide(throughput_vector,np.multiply(service_rates,n_servers))
+    #rho=np.round(np.divide(throughput_vector,service_rates),4)
+    #Compute unsatisfied demand and mobility requests for mobility zones only
+    unsatisfied_demand_per_zone=((1-rho[0:n_zones]))
+    #print(f"\nPercentage of unsatisfied demand per zone: {unsatisfied_demand_per_zone*100}%")
+    #print(f"Average demand lost: {np.round(np.sum(unsatisfied_demand_per_zone*100)/n_zones,2)}%")
+    lost_requests_per_zone=np.round(np.multiply(unsatisfied_demand_per_zone,service_rates[0:n_zones]),4)
+    #print("Requests lost per unit time per zone: ", lost_requests_per_zone)
+    #print("Total requests lost per unit time: ",np.round(np.divide(np.sum(lost_requests_per_zone),np.sum(service_rates[0:n_zones])),4))
+    return flows, aug_OD_matrix, av_vehicles, av_delay, ov_throughput, throughput_vector, av_waiting, rho, unsatisfied_demand_per_zone, lost_requests_per_zone
 
 def compute_waiting_probability(n_zones, n_charging_stations, n_servers, service_rates, rho, throughput_vector):
         #PROBABILITY TO WAIT IN CS (Erlang-C)
@@ -900,14 +963,6 @@ def plot_results(flows, aug_OD_matrix, range_vehicles, n_zones, n_charging_stati
 
 def place_CS_by(city_grid_data, zones_id_dict, n_charging_stations, order_by='throughput', ascending_order=False):
         ordered_df_column=city_grid_data.sort_values(by=[order_by], ascending=ascending_order)[[order_by]]
-        """
-        order_by_thr=city_grid_data.sort_values(by=['throughput'], ascending=False)[['throughput']]
-        order_by_rho=city_grid_data.sort_values(by=['utilization'], ascending=False)[['utilization']]
-        order_by_dep=city_grid_data.sort_values(by=['departure_per_zone'], ascending=False)[['departure_per_zone']]
-        order_by_arr=city_grid_data.sort_values(by=['arrival_per_zone'], ascending=False)[['arrival_per_zone']]
-        #print(order_by_thr)
-        #print(order_by_rho)
-        """
         inv_zones_id_dict = {v: k for k, v in zones_id_dict.items()}
         neighbors_delta=[1,-1,40,-40,39,41,-39,-41]
         grid_with_charging_stations=[]
@@ -930,7 +985,7 @@ if __name__=="__main__":
     np.random.seed(12)
     np.set_printoptions(suppress=True)
     plot=False
-    print_input_data=False
+    print_input_data=True
     print_results=False
 
     #city_grid=create_grid_and_map_data("Torino","info_per_city.csv","Turin_data_with_zones.csv",500)
@@ -941,12 +996,12 @@ if __name__=="__main__":
     #city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_data_from_file("city_grid.pickle","bookings_train.pickle")
 
     #city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_balance_OD("new_grid.pickle","trips_with_zone_id.csv")
-    city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file, tot_departure_per_zone, tot_arrival_per_zone=get_hour_OD("new_grid.pickle","trips_with_zone_id.csv",12,True)
+    city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file, tot_departure_per_zone, tot_arrival_per_zone=get_hour_OD("new_grid.pickle","trips_with_zone_id.csv",np.arange(0,24),False)
     #plot_city_zones(city_grid,[],True)
     
     #n_zones=300
-    n_vehicles=400
-    range_vehicles=[300,500,700]
+    n_vehicles=600
+    range_vehicles=[300,500,700,900,1100]
     n_charging_stations=10
     #dist_autonomy=300
     #range_v_autonomy=[100,150,200]
@@ -1010,11 +1065,12 @@ if __name__=="__main__":
     ##DETERMINE FLOWS IN CS AS FUNCTION OF: (need mva at each iteration)
     #   TOTAL THROUGHPUT AND TRIPS AUTONOMY 
     #   TOTAL DISTANCE AND VEHICLES AUTONOMY (set trips_autonomy=None)
-    flows, aug_OD_matrix, av_vehicles, av_delay, ov_throughput, throughput_vector, av_waiting, rho, unsatisfied_demand_per_zone, lost_requests_per_zone=steady_state_analysis(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations, trips_autonomy, dist_autonomy, dist_matrix)
+    flows, aug_OD_matrix, av_vehicles, av_delay, ov_throughput, throughput_vector, av_waiting, rho, unsatisfied_demand_per_zone, lost_requests_per_zone=steady_state_analysis(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations, trips_autonomy, dist_autonomy, dist_matrix, False)
    
     if city_grid is not None:
         city_grid_data, city_grid_CS_data=plot_data_on_grid(flows, throughput_vector, av_vehicles, av_delay, rho, unsatisfied_demand_per_zone, zones_with_charging_stations)
 
+    (find_closest_CS(zones_with_charging_stations, city_grid, zones_id_dict))
     waiting_p=compute_waiting_probability(n_zones, n_charging_stations, n_servers, service_rates, rho, throughput_vector)
     
     if print_results:
@@ -1028,19 +1084,30 @@ if __name__=="__main__":
     city_grid_data['arrival_per_zone']=list(tot_arrival_per_zone)
     #print(city_grid_data)
 
+    """
     #TRY CUSTOM PLACEMENT FOR CHARGING STATIONS
     #order_by: ['throughput','utilization','departure_per_zone','arrival_per_zone']
-    _zones_with_charging_stations=place_CS_by(city_grid_data, zones_id_dict, n_charging_stations, order_by='departure_per_zone', ascending_order=False)
+    _zones_with_charging_stations=place_CS_by(city_grid_data, zones_id_dict, n_charging_stations, order_by='arrival_per_zone', ascending_order=False)
 
-    flows, aug_OD_matrix, av_vehicles, av_delay, ov_throughput, throughput_vector, av_waiting, rho, unsatisfied_demand_per_zone, lost_requests_per_zone=steady_state_analysis(n_zones, n_charging_stations, OD_matrix, _zones_with_charging_stations, trips_autonomy, dist_autonomy, dist_matrix)
+    flows, aug_OD_matrix, av_vehicles, av_delay, ov_throughput, throughput_vector, av_waiting, rho, unsatisfied_demand_per_zone, lost_requests_per_zone=steady_state_analysis(n_zones, n_charging_stations, OD_matrix, _zones_with_charging_stations, trips_autonomy, dist_autonomy, dist_matrix, False)
     city_grid_data, city_grid_CS_data=plot_data_on_grid(flows, throughput_vector, av_vehicles, av_delay, rho, unsatisfied_demand_per_zone, _zones_with_charging_stations)
     waiting_p=compute_waiting_probability(n_zones, n_charging_stations, n_servers, service_rates, rho, throughput_vector)
     print_stat(flows, av_vehicles, av_delay, av_waiting, ov_throughput, throughput_vector, rho, waiting_p)
     plot_results(flows, aug_OD_matrix, range_vehicles, n_zones, n_charging_stations, n_vehicles, service_rates, n_servers, range_trips, av_vehicles, waiting_p, unsatisfied_demand_per_zone, zones_id_dict, _zones_with_charging_stations)
     plot_bar_per_zone(n_zones, n_charging_stations, _zones_with_charging_stations, av_vehicles, av_delay, av_waiting, throughput_vector, rho, unsatisfied_demand_per_zone, lost_requests_per_zone, zones_id_dict)
+    #with relocation for charging
+    flows, aug_OD_matrix, av_vehicles, av_delay, ov_throughput, throughput_vector, av_waiting, rho, unsatisfied_demand_per_zone, lost_requests_per_zone=steady_state_analysis(n_zones, n_charging_stations, OD_matrix, _zones_with_charging_stations, trips_autonomy, dist_autonomy, dist_matrix, True)
+    city_grid_data, city_grid_CS_data=plot_data_on_grid(flows, throughput_vector, av_vehicles, av_delay, rho, unsatisfied_demand_per_zone, _zones_with_charging_stations)
+    waiting_p=compute_waiting_probability(n_zones, n_charging_stations, n_servers, service_rates, rho, throughput_vector)
+    print_stat(flows, av_vehicles, av_delay, av_waiting, ov_throughput, throughput_vector, rho, waiting_p)
+    plot_results(flows, aug_OD_matrix, range_vehicles, n_zones, n_charging_stations, n_vehicles, service_rates, n_servers, range_trips, av_vehicles, waiting_p, unsatisfied_demand_per_zone, zones_id_dict, _zones_with_charging_stations)
+    plot_bar_per_zone(n_zones, n_charging_stations, _zones_with_charging_stations, av_vehicles, av_delay, av_waiting, throughput_vector, rho, unsatisfied_demand_per_zone, lost_requests_per_zone, zones_id_dict)
+    """
     if n_zones+n_charging_stations<10:
         product_form_distribution(n_zones, n_charging_stations, n_vehicles, flows, service_rates, n_servers)
+    
     plt.show()
+    plt.close('all')
     """
     ## CUST EXAMPLE
     en_zones=3
