@@ -238,6 +238,7 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     cs_ticks=["z"+str(i) for i in grid_with_CS]
     #AVG VEHICLES
     fig11, (ax11, ax21) = plt.subplots(1,2)
+    fig11.set_size_inches(18.5, 10.5)
     ax11.bar(zone_axis,city_grid_data['av_vehicles']) 
     #ax21.bar(np.arange(n_charging_stations),n_servers[n_zones:n_zones+n_charging_stations],label='number of servers', color='red', alpha=0.7)
     ax21.bar(np.arange(n_charging_stations),city_grid_CS_data['av_vehicles'], label='number of vehicles', alpha=0.7)
@@ -254,6 +255,7 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     #plt.show()
     #IDLE+WAITING TIME
     fig12, (ax12,ax22, ax32) = plt.subplots(1,3)
+    fig12.set_size_inches(18.5, 10.5)
     ax12.bar(zone_axis,city_grid_data['av_delay'])
     ax22.bar(np.arange(n_charging_stations),city_grid_CS_data['av_delay'])
     ax32.bar(np.arange(n_charging_stations),city_grid_CS_data['av_waiting'])
@@ -279,6 +281,7 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     #plt.show()
     #THROUGHPUT
     fig13, (ax13, ax23) = plt.subplots(1,2)
+    fig13.set_size_inches(18.5, 10.5)
     ax13.bar(zone_axis,city_grid_data['throughput'])
     ax23.bar(np.arange(n_charging_stations), city_grid_CS_data['throughput'],color='red')
     fig13.suptitle(f"Vehicles througput per zones")
@@ -294,6 +297,7 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     #plt.show()
     #UTILIZATION
     fig14, (ax14, ax24) = plt.subplots(1,2, sharey=True)
+    fig14.set_size_inches(18.5, 10.5)
     ax14.bar(zone_axis,city_grid_data['utilization']*100)
     ax24.bar(np.arange(n_charging_stations), city_grid_CS_data['utilization']*100, color='green')
     fig14.suptitle(f"Utilization per zones")
@@ -308,6 +312,7 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     #plt.show()
     #UN DEMAND
     fig15, ax15 = plt.subplots()
+    fig15.set_size_inches(18.5, 10.5)
     ax15.bar(zone_axis,city_grid_data['un_demand']*100)
     ax15.set_title(f"Unsatisfied mobility demand per zones")
     ax15.set_xlabel("Zones")
@@ -317,6 +322,7 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     #plt.show()
     #LOST REQ
     fig16, ax16 = plt.subplots()
+    fig16.set_size_inches(18.5, 10.5)
     ax16.bar(zone_axis,city_grid_data['lost_req'])
     ax16.set_title(f"Lost mobility requests per zones")
     ax16.set_xlabel("Zones")
@@ -370,7 +376,7 @@ def total_fluxes(n_zones, n_charging_stations, OD_matrix, zones_with_charging_st
                 iterate=False
                 flows=np.array([max(0,i) for i in flows])
         else:
-            if num_it <1000:
+            if num_it <10000:
                 if (abs(flows-lambda_vec)>10e-3).any(): #check on convergence
                     #print("AAAAAAAAAA")
                     lambda_vec=flows
@@ -447,7 +453,7 @@ def fluxes_with_reloc4charg(n_zones, n_charging_stations, OD_matrix, zones_with_
                 iterate=False
                 flows=np.array([max(0,i) for i in flows])
         else:
-            if num_it <1000:
+            if num_it <10000:
                 if (abs(flows-lambda_vec)>10e-3).any(): #check on convergence
                     #print("AAAAAAAAAA")
                     lambda_vec=flows
@@ -466,6 +472,7 @@ def find_closest_CS(zones_with_CS, city_grid, zones_id_dict):
     grid_with_CS=[zones_id_dict[i] for i in zones_with_CS]
     grid_with_CS_geo=city_grid.loc[city_grid.index.isin(grid_with_CS)]['geometry']
     grid_with_CS_geo=grid_with_CS_geo.to_crs(epsg=3035)
+    city_grid=city_grid.to_crs(epsg=3035)
     #grid_with_CS_geo=grid_with_CS_geo.centroid
     nearest_CS=[]
     for zone in city_grid.geometry:
@@ -830,7 +837,7 @@ def get_data_from_OD_file(csv_file):
 
 def print_data(n_zones, n_vehicles, trips_autonomy, dist_autonomy, outlet_rate, zones_with_charging_stations, outlet_per_stations):
         print("Number of zones: ", n_zones)
-        print("Numbber of vehicles: ", n_vehicles)
+        print("Number of vehicles: ", n_vehicles)
         print("Trips autonomy: ", np.round(trips_autonomy,2))
         print(f"Distance autonomy: {np.round(dist_autonomy,2)} km")
         print(f"Charging rates: {np.round(outlet_rate,2)}/h")
@@ -898,27 +905,32 @@ def compute_waiting_probability(n_zones, n_charging_stations, n_servers, service
     return waiting_p
 
 def plot_data_on_grid(city_grid_data, city_grid_CS_data, ov_throughput):
-        #fig1, (ax11,ax12,ax13)=plt.subplots(1,3)
-        #city_grid.plot(color="white", edgecolor="black", ax=ax1)
-        av_ud=np.sum(np.multiply(np.array(city_grid_data['un_demand']),(np.array(city_grid_data['service_rates']/np.sum(np.array(city_grid_data['service_rates']))))))
-        #plot over city grid
-        fig7, (ax11,ax12,ax13)=plt.subplots(1,3)
-        fig7.text(0.5, 0.98, f"System throughput: {np.round(ov_throughput,2)}\nAverage unsatisfied demand: {np.round(av_ud,2)}%",horizontalalignment='center', verticalalignment='top')
-        city_grid_data.plot(column="av_vehicles", ax=ax11, legend=True, legend_kwds={'label':'Average vehicles'})
-        city_grid_CS_data=city_grid_CS_data.to_crs(epsg=3035)
-        city_grid_CS_data.centroid.plot(ax=ax11, marker='.', color="red")
-        city_grid_data.plot(column="un_demand", ax=ax12, legend=True, legend_kwds={'label':'Unsatisfied demand [%]'})
-        city_grid_CS_data.centroid.plot(ax=ax12, marker='.', color="red")
-        city_grid_data.plot(column="throughput", ax=ax13, legend=True, legend_kwds={'label':'Throughput'})
-        city_grid_CS_data.centroid.plot(ax=ax13, marker='.', color="red")
-        ax11.set_axis_off()
-        ax12.set_axis_off()
-        ax13.set_axis_off()
-        output_dir=f'img/{case}'
-        mkdir_p(output_dir)
-        plt.savefig(f'{output_dir}/map_plot.png')
-        #plt.show()
-        return 
+    #fig1, (ax11,ax12,ax13)=plt.subplots(1,3)
+    #city_grid_data.plot(color="white", edgecolor="black")
+    av_ud=np.sum(np.multiply(np.array(city_grid_data['un_demand']),(np.array(city_grid_data['service_rates']/np.sum(np.array(city_grid_data['service_rates']))))))
+    #plot over city grid
+    fig7, (ax11,ax12,ax13)=plt.subplots(1,3)
+    fig7.set_size_inches(18.5, 10.5)
+    fig7.text(0.5, 0.98, f"System throughput: {np.round(ov_throughput,2)}\nAverage unsatisfied demand: {np.round(av_ud,2)}%",horizontalalignment='center', verticalalignment='top')
+    city_grid_CS_data=city_grid_CS_data.to_crs(epsg=3035)
+    CS_centroids=city_grid_CS_data.centroid
+    CS_centroids=CS_centroids.to_crs(epsg=4326)
+    city_grid_data.plot(column="av_vehicles", ax=ax11, legend=True, legend_kwds={'label':'Average vehicles'},edgecolor="black")
+    CS_centroids.plot(ax=ax11, marker='.', color="red", markersize=24)
+    city_grid_data.plot(column="un_demand", ax=ax12, legend=True, legend_kwds={'label':'Unsatisfied demand [%]'},edgecolor="black")
+    CS_centroids.plot(ax=ax12, marker='.', color="red", markersize=24)
+    city_grid_data.plot(column="throughput", ax=ax13, legend=True, legend_kwds={'label':'Throughput'},edgecolor="black")
+    CS_centroids.plot(ax=ax13, marker='.', color="red", markersize=24)
+    ax11.set_axis_off()
+    ax12.set_axis_off()
+    ax13.set_axis_off()
+    output_dir=f'img/{case}'
+    mkdir_p(output_dir)
+    plt.savefig(f'{output_dir}/map_plot.png')
+    print("ov throughput: ", ov_throughput)
+    print("avg unsatisfied demand: ", av_ud)
+    #plt.show()
+    return 
 
 def print_stat(city_grid_data, city_grid_CS_data, ov_throughput):
         print("Relative flows per zone:\n", city_grid_data['flows'])
@@ -939,6 +951,7 @@ def plot_results(city_grid_data, city_grid_CS_data, aug_OD_matrix, range_vehicle
         flows=np.array(city_grid_data['flows'])
         _aug_OD=aug_OD_matrix
         fig4, ax4 = plt.subplots()
+        fig4.set_size_inches(18.5, 10.5)
         for _n_vehicles in range_vehicles:
             _av_vehicles, _av_delay, _ov_throughput=MS_MVA(n_zones, _n_vehicles, service_rates[0:n_zones], flows, n_servers[0:n_zones])
             _throughput_vector=_ov_throughput*flows
@@ -955,6 +968,7 @@ def plot_results(city_grid_data, city_grid_CS_data, aug_OD_matrix, range_vehicle
         cs_ticks=["z"+str(i) for i in grid_with_CS]
         
         fig6, (ax61,ax62)=plt.subplots(2,1, sharex=True)
+        fig6.set_size_inches(18.5, 10.5)
         ax61.bar(np.arange(n_charging_stations),city_grid_CS_data['av_vehicles'], alpha=.5)
         ax62.bar(np.arange(n_charging_stations),city_grid_CS_data['waiting_p']*100, color='green')
         fig6.suptitle("Vehicles and waiting proability in charging stations")
@@ -976,6 +990,7 @@ def plot_results(city_grid_data, city_grid_CS_data, aug_OD_matrix, range_vehicle
 
         #cumulative distribution histogram of unsatisfied demand
         fig3, ax3 = plt.subplots()
+        fig3.set_size_inches(18.5, 10.5)
         ax3.hist(city_grid_data['un_demand'], bins=30, cumulative=True, density=True, histtype='stepfilled' )
         ax3.set_title(f"Cumulative distribution of unsatisfied mobility demand per zones {n_vehicles} vehicles")
         ax3.set_xlabel("Unsatisfied demand")
@@ -1038,7 +1053,7 @@ if __name__=="__main__":
     #city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_data_from_file("city_grid.pickle","bookings_train.pickle")
 
     #city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_balance_OD("new_grid.pickle","trips_with_zone_id.csv")
-    data_time_interval=np.arange(8,12)
+    data_time_interval=np.arange(12,13)
     week_day=False
     city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file, tot_departure_per_zone, tot_arrival_per_zone=get_hour_OD("new_grid.pickle","trips_with_zone_id.csv",data_time_interval,week_day)
     if week_day:
@@ -1055,7 +1070,7 @@ if __name__=="__main__":
     #plot_city_zones(city_grid,[],True)
     
     #n_zones=300
-    n_vehicles=300
+    n_vehicles=400
     range_vehicles=[300,500,700]
     n_charging_stations=10
     #dist_autonomy=300
@@ -1153,11 +1168,16 @@ if __name__=="__main__":
         plot_data_on_grid(city_grid_data, city_grid_CS_data, ov_throughput)
         waiting_p=compute_waiting_probability(n_zones, n_charging_stations, n_servers, service_rates, city_grid_CS_data)
         city_grid_CS_data['waiting_p']=waiting_p
+        avg_CS_utilization=city_grid_CS_data['utilization'].mean()
+        print("Average CS utilization: ", avg_CS_utilization*100)
+        print("Max CS utilization: ", city_grid_CS_data['utilization'].max()*100)
+
         #print_stat(city_grid_data, city_grid_CS_data, ov_throughput)
         plot_results(city_grid_data, city_grid_CS_data, aug_OD_matrix, range_vehicles, n_zones, n_charging_stations, n_vehicles, service_rates, n_servers, zones_id_dict, _zones_with_charging_stations)
         plot_bar_per_zone(n_zones, n_charging_stations, _zones_with_charging_stations, city_grid_data, city_grid_CS_data, zones_id_dict)
     else:
         print("No convergence of flows!")
+    
     #with relocation for charging (uniform to CS)
     case=f'{case_time}_u_reloc_{n_charging_stations}CS'
     print(f"\nCASE: {case}")
@@ -1166,6 +1186,9 @@ if __name__=="__main__":
         plot_data_on_grid(city_grid_data, city_grid_CS_data, ov_throughput)
         waiting_p=compute_waiting_probability(n_zones, n_charging_stations, n_servers, service_rates, city_grid_CS_data)
         city_grid_CS_data['waiting_p']=waiting_p
+        avg_CS_utilization=city_grid_CS_data['utilization'].mean()
+        print("Average CS utilization: ", avg_CS_utilization*100)
+        print("Max CS utilization: ", city_grid_CS_data['utilization'].max()*100)
         #print_stat(city_grid_data, city_grid_CS_data, ov_throughput)
         plot_results(city_grid_data, city_grid_CS_data, aug_OD_matrix, range_vehicles, n_zones, n_charging_stations, n_vehicles, service_rates, n_servers, zones_id_dict, _zones_with_charging_stations)
         plot_bar_per_zone(n_zones, n_charging_stations, _zones_with_charging_stations, city_grid_data, city_grid_CS_data, zones_id_dict)
@@ -1179,11 +1202,17 @@ if __name__=="__main__":
         plot_data_on_grid(city_grid_data, city_grid_CS_data, ov_throughput)
         waiting_p=compute_waiting_probability(n_zones, n_charging_stations, n_servers, service_rates, city_grid_CS_data)
         city_grid_CS_data['waiting_p']=waiting_p
+        avg_CS_utilization=city_grid_CS_data['utilization'].mean()
+        print("Average CS utilization: ", avg_CS_utilization*100)
+        print("Max CS utilization: ", city_grid_CS_data['utilization'].max()*100)
+
         #print_stat(city_grid_data, city_grid_CS_data, ov_throughput)
         plot_results(city_grid_data, city_grid_CS_data, aug_OD_matrix, range_vehicles, n_zones, n_charging_stations, n_vehicles, service_rates, n_servers, zones_id_dict, _zones_with_charging_stations)
         plot_bar_per_zone(n_zones, n_charging_stations, _zones_with_charging_stations, city_grid_data, city_grid_CS_data, zones_id_dict)
     else:
         print("No convergence of flows!")
+    
+    
     #CONNCENTRATED CS
     n_charging_stations=2
     outlet_per_stations=10
