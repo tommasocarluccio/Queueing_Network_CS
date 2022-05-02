@@ -251,7 +251,7 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     ax11.grid()
     ax21.grid()
     ax21.legend()
-    plt.savefig(f'{output_dir}/bar_veh.png')
+    plt.savefig(f'{output_dir}/bar_veh.png', transparent=True, bbox_inches='tight')
     #plt.show()
     #IDLE+WAITING TIME
     fig12, (ax12,ax22, ax32) = plt.subplots(1,3)
@@ -277,7 +277,7 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     ax12.grid()
     ax22.grid()
     ax32.grid()
-    plt.savefig(f'{output_dir}/bar_del.png')
+    plt.savefig(f'{output_dir}/bar_del.png', transparent=True, bbox_inches='tight')
     #plt.show()
     #THROUGHPUT
     fig13, (ax13, ax23) = plt.subplots(1,2)
@@ -293,7 +293,7 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     ax23.set_xticklabels(cs_ticks, rotation=45)
     ax13.grid()
     ax23.grid()
-    plt.savefig(f'{output_dir}/bar_thr.png')
+    plt.savefig(f'{output_dir}/bar_thr.png', transparent=True, bbox_inches='tight')
     #plt.show()
     #UTILIZATION
     fig14, (ax14, ax24) = plt.subplots(1,2, sharey=True)
@@ -308,7 +308,7 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     ax24.set_xticklabels(cs_ticks, rotation=45)
     ax14.grid()
     ax24.grid()
-    plt.savefig(f'{output_dir}/bar_ut.png')
+    plt.savefig(f'{output_dir}/bar_ut.png', transparent=True, bbox_inches='tight')
     #plt.show()
     #UN DEMAND
     fig15, ax15 = plt.subplots()
@@ -318,7 +318,7 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     ax15.set_xlabel("Zones")
     ax15.set_ylabel("Unsatisfied demand [%]")
     ax15.grid()
-    plt.savefig(f'{output_dir}/bar_und.png')
+    plt.savefig(f'{output_dir}/bar_und.png', transparent=True, bbox_inches='tight')
     #plt.show()
     #LOST REQ
     fig16, ax16 = plt.subplots()
@@ -328,8 +328,29 @@ def plot_bar_per_zone(n_zones, n_charging_stations, zones_with_charging_stations
     ax16.set_xlabel("Zones")
     ax16.set_ylabel("Lost requests")
     ax16.grid()
-    plt.savefig(f'{output_dir}/bar_lost.png')
+    plt.savefig(f'{output_dir}/bar_lost.png', transparent=True, bbox_inches='tight')
     #plt.show()
+    #CS THR+ CS UT
+    fig17, (ax17, ax27) = plt.subplots(1,2)
+    avg_CS_utilization=city_grid_CS_data['utilization'].mean()*100
+    avg_CS_throughput=city_grid_CS_data['throughput'].mean()
+    fig17.set_size_inches(18.5, 10.5)
+    ax17.bar(np.arange(n_charging_stations),city_grid_CS_data['throughput'], color='red')
+    ax27.bar(np.arange(n_charging_stations), city_grid_CS_data['utilization']*100, color='green')
+    fig17.suptitle(f"Throughput and utilization of charging stations")
+    ax17.set_xlabel("Charging station")
+    ax27.set_xlabel("Charging station")
+    ax17.set_ylabel("Throughput")
+    ax27.set_ylabel("Utilization [%]")
+    ax17.set_xticks(list(np.arange(n_charging_stations)))
+    ax27.set_xticks(list(np.arange(n_charging_stations)))
+    ax17.set_xticklabels(cs_ticks, rotation=45)
+    ax27.set_xticklabels(cs_ticks, rotation=45)
+    ax17.set_title(f"Average CS throughput: {np.round(avg_CS_throughput,2)}")
+    ax27.set_title(f"Average CS utilization: {np.round(avg_CS_utilization,2)}%")
+    ax17.grid()
+    ax27.grid()
+    plt.savefig(f'{output_dir}/bar_CS_th_ut.png',transparent=True, bbox_inches='tight')
 
 #COMPUTE FLUXES IN NETWORK WITH CS (k as function of total throughput or total distance)
 def total_fluxes(n_zones, n_charging_stations, OD_matrix, zones_with_charging_stations, trips_autonomy):
@@ -926,7 +947,7 @@ def plot_data_on_grid(city_grid_data, city_grid_CS_data, ov_throughput):
     ax13.set_axis_off()
     output_dir=f'img/{case}'
     mkdir_p(output_dir)
-    plt.savefig(f'{output_dir}/map_plot.png')
+    plt.savefig(f'{output_dir}/map_plot.png', transparent=True, bbox_inches='tight')
     print("ov throughput: ", ov_throughput)
     print("avg unsatisfied demand: ", av_ud)
     #plt.show()
@@ -962,7 +983,7 @@ def plot_results(city_grid_data, city_grid_CS_data, aug_OD_matrix, range_vehicle
         ax4.set_xlabel("Unsatisfied demand")
         ax4.grid()
         ax4.legend(loc='upper left')
-        plt.savefig(f'{output_dir}/cum_dist_range.png')
+        plt.savefig(f'{output_dir}/cum_dist_range.png', transparent=True, bbox_inches='tight')
         #plt.show()
         grid_with_CS=[zones_id_dict[i] for i in zones_with_charging_stations]
         cs_ticks=["z"+str(i) for i in grid_with_CS]
@@ -983,7 +1004,7 @@ def plot_results(city_grid_data, city_grid_CS_data, aug_OD_matrix, range_vehicle
         ax62.set_xticklabels(cs_ticks, rotation=45)
         ax61.grid()
         ax62.grid()
-        plt.savefig(f'{output_dir}/wait_p.png')
+        plt.savefig(f'{output_dir}/wait_p.png', transparent=True, bbox_inches='tight')
         #ax61.scatter(np.arange(n_charging_stations),n_servers[n_zones:n_zones+n_charging_stations], label=f'n servers', color='red',marker='.')
         #fig6.legend()
         #plt.show()
@@ -995,7 +1016,7 @@ def plot_results(city_grid_data, city_grid_CS_data, aug_OD_matrix, range_vehicle
         ax3.set_title(f"Cumulative distribution of unsatisfied mobility demand per zones {n_vehicles} vehicles")
         ax3.set_xlabel("Unsatisfied demand")
         ax3.grid()
-        plt.savefig(f'{output_dir}/cum_dist.png')
+        plt.savefig(f'{output_dir}/cum_dist.png', transparent=True, bbox_inches='tight')
         #plt.show()
 
 def place_CS_by(trips_data, zones_id_dict, n_charging_stations, order_by='arrival_per_zone', ascending_order=False):
@@ -1053,7 +1074,7 @@ if __name__=="__main__":
     #city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_data_from_file("city_grid.pickle","bookings_train.pickle")
 
     #city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file=get_balance_OD("new_grid.pickle","trips_with_zone_id.csv")
-    data_time_interval=np.arange(12,13)
+    data_time_interval=np.arange(0,24)
     week_day=False
     city_grid, n_zones, zones_id_dict, OD_from_file, zone_rates_from_file, tot_departure_per_zone, tot_arrival_per_zone=get_hour_OD("new_grid.pickle","trips_with_zone_id.csv",data_time_interval,week_day)
     if week_day:
@@ -1156,12 +1177,14 @@ if __name__=="__main__":
     trips_data=pd.DataFrame(list(tot_departure_per_zone),index=city_grid.zone_id, columns=['departure_per_zone'])
     trips_data['arrival_per_zone']=list(tot_arrival_per_zone)
     #order_by: ['departure_per_zone','arrival_per_zone']
-    _zones_with_charging_stations=place_CS_by(trips_data, zones_id_dict, n_charging_stations, order_by='arrival_per_zone', ascending_order=False)
+    order_dict={'dep':'departure_per_zone','arr':'arrival_per_zone'}
+    order_by='arr'
+    _zones_with_charging_stations=place_CS_by(trips_data, zones_id_dict, n_charging_stations, order_by=order_dict[order_by], ascending_order=False)
     print("Zones with CS: ",_zones_with_charging_stations)
     #plot_city_zones(city_grid,_zones_with_charging_stations,True)
     
     #without relocation for charging
-    case=f'{case_time}_no_reloc_{n_charging_stations}CS'
+    case=f'{case_time}_no_reloc_{n_charging_stations}CS_{order_by}'
     print(f"\nCASE: {case}")
     city_grid_data, city_grid_CS_data, aug_OD_matrix, ov_throughput=steady_state_analysis(n_zones, n_charging_stations, n_vehicles, service_rates, n_servers, OD_matrix, _zones_with_charging_stations, trips_autonomy, city_grid, zones_id_dict, False, False)
     if not city_grid_data.empty:
@@ -1179,7 +1202,7 @@ if __name__=="__main__":
         print("No convergence of flows!")
     
     #with relocation for charging (uniform to CS)
-    case=f'{case_time}_u_reloc_{n_charging_stations}CS'
+    case=f'{case_time}_u_reloc_{n_charging_stations}CS_{order_by}'
     print(f"\nCASE: {case}")
     if not city_grid_data.empty:
         city_grid_data, city_grid_CS_data, aug_OD_matrix, ov_throughput=steady_state_analysis(n_zones, n_charging_stations, n_vehicles, service_rates, n_servers, OD_matrix, _zones_with_charging_stations, trips_autonomy, city_grid, zones_id_dict, True, False)
@@ -1195,7 +1218,7 @@ if __name__=="__main__":
     else:
         print("No convergence of flows!")
     #with relocation for charging (nearest CS)
-    case=f'{case_time}_closest_reloc_{n_charging_stations}CS'
+    case=f'{case_time}_closest_reloc_{n_charging_stations}CS_{order_by}'
     print(f"\nCASE: {case}")
     city_grid_data, city_grid_CS_data, aug_OD_matrix, ov_throughput=steady_state_analysis(n_zones, n_charging_stations, n_vehicles, service_rates, n_servers, OD_matrix, _zones_with_charging_stations, trips_autonomy, city_grid, zones_id_dict, True, True)
     if not city_grid_data.empty:
@@ -1224,10 +1247,10 @@ if __name__=="__main__":
     service_rates[0:n_zones]=zone_rates_from_file
     service_rates[n_zones:n_zones+n_charging_stations]=(np.ones(n_charging_stations)*outlet_rate)
 
-    _zones_with_charging_stations=place_CS_by(trips_data, zones_id_dict, n_charging_stations, order_by='arrival_per_zone', ascending_order=False)
+    _zones_with_charging_stations=place_CS_by(trips_data, zones_id_dict, n_charging_stations, order_by=order_dict[order_by], ascending_order=False)
     print("Zones with CS: ",_zones_with_charging_stations)
     #without reloc4charg
-    case=f'{case_time}_no_reloc_{n_charging_stations}CS'
+    case=f'{case_time}_no_reloc_{n_charging_stations}CS_{order_by}'
     print(f"\nCASE: {case}")
     city_grid_data, city_grid_CS_data, aug_OD_matrix, ov_throughput=steady_state_analysis(n_zones, n_charging_stations, n_vehicles, service_rates, n_servers, OD_matrix, _zones_with_charging_stations, trips_autonomy, city_grid, zones_id_dict, False, False)
     if not city_grid_data.empty:
@@ -1240,7 +1263,7 @@ if __name__=="__main__":
     else:
         print("No convergence of flows!")
     #with relocation for charging (uniform to CS)
-    case=f'{case_time}_u_reloc_{n_charging_stations}CS'
+    case=f'{case_time}_u_reloc_{n_charging_stations}CS_{order_by}'
     print(f"\nCASE: {case}")
     city_grid_data, city_grid_CS_data, aug_OD_matrix, ov_throughput=steady_state_analysis(n_zones, n_charging_stations, n_vehicles, service_rates, n_servers, OD_matrix, _zones_with_charging_stations, trips_autonomy, city_grid, zones_id_dict, True, False)
     if not city_grid_data.empty:
@@ -1253,7 +1276,7 @@ if __name__=="__main__":
     else:
         print("No convergence of flows!")
     #with relocation for charging (nearest CS)
-    case=f'{case_time}_closest_reloc_{n_charging_stations}CS'
+    case=f'{case_time}_closest_reloc_{n_charging_stations}CS_{order_by}'
     print(f"\nCASE: {case}")
     city_grid_data, city_grid_CS_data, aug_OD_matrix, ov_throughput=steady_state_analysis(n_zones, n_charging_stations, n_vehicles, service_rates, n_servers, OD_matrix, _zones_with_charging_stations, trips_autonomy, city_grid, zones_id_dict, True, True)
     if not city_grid_data.empty:

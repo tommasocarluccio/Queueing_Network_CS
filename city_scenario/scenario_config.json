@@ -1,0 +1,20 @@
+{
+ "n_vehicles": 400,
+ "n_charging_stations": 10,
+ "battery_capacity": 24,
+ "min_charging_th": 0.2,
+ "max_charging_th": 0.9,
+ "av_consumption": 0.17,
+ "av_trip_length": 4,
+ "outlet_power": 20,
+ "outlet_per_stations": 2,
+ "start_hour": 0,
+ "end_hour": 24,
+ "week_day": false,
+ "order_CS_position_by": "random",
+ "delay_queue": true,
+ "av_trip_time": 15,
+ "charging_policy": "opportunistic",
+ "reloc_after_charging": "highest_demand",
+ "n_top_zones":50
+}
