@@ -11,10 +11,10 @@
  "start_hour": 0,
  "end_hour": 24,
  "week_day": false,
- "order_CS_position_by": "random",
- "delay_queue": true,
+ "order_CS_position_by": "departure_per_zone",
+ "delay_queue": "single",
  "av_trip_time": 15,
  "charging_policy": "opportunistic",
- "reloc_after_charging": "highest_demand",
- "n_top_zones":50
+ "reloc_after_charging": "none",
+ "n_top_zones": 50
 }

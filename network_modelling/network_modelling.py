@@ -4,11 +4,11 @@ import numpy as np
 import pandas as pd
 
 class Network():
-    def __init__(self, city_scenario, n_vehicles):
+    def __init__(self, city_scenario):
         self.city_scenario=city_scenario
         self.n_zones=self.city_scenario.n_zones
         self.n_charging_stations=self.city_scenario.n_charging_stations
-        self.n_vehicles=n_vehicles
+        self.n_vehicles=self.city_scenario.n_vehicles
         self.service_rates=self.city_scenario.service_rates
         self.n_servers=self.city_scenario.n_servers
         self.OD_matrix=self.city_scenario.OD_matrix
@@ -31,15 +31,27 @@ class Network():
             flows, aug_OD_matrix=self.total_fluxes()
         else:
         """
-        flows, aug_OD_matrix=self.fluxes_with_reloc4charg()
+        if self.city_scenario.delay_queue=="multiple":
+            flows, aug_OD_matrix=self.fluxes_with_reloc4charg_del()
+        else:
+            flows, aug_OD_matrix=self.fluxes_with_reloc4charg()
         if flows.size!=0:
+            #print("F sum: ", np.sum(flows))
             ## MS_MVA - Multi-Server Mean Value Analysis of the network
-            if self.city_scenario.delay_queue:
+            if self.city_scenario.delay_queue=="single":
                 av_vehicles, av_delay, ov_throughput=self.MS_MVA_inf(flows, self.n_vehicles)
                 print("Av vehicles in D: ", av_vehicles[self.n_zones+self.n_charging_stations])
+            elif self.city_scenario.delay_queue=="multiple":
+                av_vehicles, av_delay, ov_throughput=self.MS_MVA_inf_mult(flows, self.n_vehicles)
+                print("Av vehicles in Ds:", np.sum(av_vehicles[self.n_zones+self.n_charging_stations:self.n_zones*2+self.n_charging_stations]))
             else:
                 av_vehicles, av_delay, ov_throughput=self.MS_MVA(flows, self.n_vehicles)
+                print("NO DELAY")
             throughput_vector=ov_throughput*flows
+            #print("TOTOT: ", np.sum(throughput_vector))
+            #print("MVA OV:", ov_throughput)
+            zone_throughput=np.sum(throughput_vector[0:self.n_zones])
+            #print("ov throughput zones+CS only: ", zone_throughput)
             av_waiting=av_delay-(1/self.service_rates)
             #compute utilization vector (rho) with computed flows and service rates
             rho=np.divide(throughput_vector[0:self.n_zones+self.n_charging_stations],np.multiply(self.service_rates[0:self.n_zones+self.n_charging_stations],self.n_servers))
@@ -73,113 +85,9 @@ class Network():
         else:
             city_grid_data=pd.DataFrame()
             city_grid_CS_data=pd.DataFrame()
-            ov_throughput=None
+            zone_throughput=None
 
-        return city_grid_data, city_grid_CS_data, aug_OD_matrix, ov_throughput
-
-    def total_fluxes(self):
-        aug_matrix=np.zeros((self.n_zones+self.n_charging_stations,self.n_zones+self.n_charging_stations))
-        aug_matrix[0:self.n_zones,0:self.n_zones]=self.OD_matrix
-        #define only element in the CS row equal to one corresponding to its zone
-        for j in range(self.n_charging_stations):
-            aug_matrix[self.n_zones+j][self.zones_with_charging_stations[j]]=1
-        lambda_vec=np.random.rand(self.n_charging_stations+self.n_zones)
-        lambda_vec=lambda_vec/(np.sum(lambda_vec))
-        num_it=0
-        k=1/self.trips_autonomy
-        #ITERATE TO FIND FLOWS AT STEADY STATE
-        iterate=True
-        while iterate:
-            flows=np.dot(lambda_vec,aug_matrix)#compute vector of flows
-            tot_CS_flows=0
-            for i in self.zones_with_charging_stations:
-                tot_CS_flows+=flows[i]
-            tot_flows=np.sum(flows)
-            k=(1/self.trips_autonomy)/(tot_CS_flows/tot_flows)
-            if k>=1:
-                k=0.99
-                "K clipped"
-            if self.n_charging_stations>0:
-                #COMPUTE CHARGING FLOWS FOR EACH ZONE WITH CURRENT NETWORK FLOWS 
-                for i in range(len(self.zones_with_charging_stations)):
-                    #correct OD matrix with k
-                    aug_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]=self.OD_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]*(1-k)
-                    aug_matrix[0:self.n_zones,self.n_zones+i]=self.OD_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]*k
-            aug_matrix=aug_matrix/aug_matrix.sum(axis=1)[:,None]    
-            if num_it<50:
-                if (abs(flows-lambda_vec)>10e-4).any(): #check on convergence
-                    lambda_vec=flows
-                    num_it+=1
-                else:
-                    iterate=False
-                    flows=np.array([max(0,i) for i in flows])
-            else:
-                if num_it <10000:
-                    if (abs(flows-lambda_vec)>10e-3).any(): #check on convergence
-                        lambda_vec=flows
-                        num_it+=1
-                    else:
-                        iterate=False
-                        flows=np.array([max(0,i) for i in flows])
-                else:
-                    iterate=False
-                    flows=np.array([]) 
-        return flows, aug_matrix
-
-    def fluxes_with_reloc4charg_old(self):
-        aug_matrix=np.zeros((self.n_zones+self.n_charging_stations,self.n_zones+self.n_charging_stations))
-        aug_matrix[0:self.n_zones,0:self.n_zones]=self.OD_matrix
-        zones_list=list(np.arange(0,self.n_zones))
-        zones_without_CS=[zone for zone in zones_list if zone not in self.zones_with_charging_stations]
-        #define only element in the CS row equal to one corresponding to its zone
-        for j in range(self.n_charging_stations):
-            aug_matrix[self.n_zones+j][self.zones_with_charging_stations[j]]=1
-        lambda_vec=np.random.rand(self.n_charging_stations+self.n_zones)
-        lambda_vec=lambda_vec/(np.sum(lambda_vec))
-        num_it=0
-        k=1/self.trips_autonomy
-        if self.n_charging_stations>0:
-            #redirect flow from each zone to CS
-            if self.charging_policy=='closest_CS':
-                closest_CS_ids=self.find_closest_CS()
-                inv_zones_id_dict = {v: k for k, v in self.zones_id_dict.items()}
-                closest_CS_od=[inv_zones_id_dict[i] for i in closest_CS_ids]
-                self.zones_with_charging_stations=np.array(self.zones_with_charging_stations)
-                for i in range(self.n_zones):
-                    aug_matrix[0:self.n_zones,self.n_zones+(np.where(self.zones_with_charging_stations==closest_CS_od[i])[0].item())]+=self.OD_matrix[0:self.n_zones,i]*k
-            else: #uniform relocation
-                for i in range(len(self.zones_with_charging_stations)):
-                    #correct OD matrix with k
-                    #fluxes directed to the zone with CS inside
-                    aug_matrix[0:self.n_zones,self.n_zones+i]=self.OD_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]*k
-                    for j in range(len(zones_without_CS)):
-                        #fluxes directed to zones WITHOUT CS inside
-                        aug_matrix[0:self.n_zones,self.n_zones+i]=aug_matrix[0:self.n_zones,self.n_zones+i]+self.OD_matrix[0:self.n_zones,zones_without_CS[j]]*(k/self.n_charging_stations)
-            #for both each mobility zone times (1-k)
-            aug_matrix[0:self.n_zones,0:self.n_zones]=self.OD_matrix[0:self.n_zones,0:self.n_zones]*(1-k)        
-        #ITERATE TO FIND FLOWS AT STEADY STATE
-        iterate=True
-        while iterate:
-            flows=np.dot(lambda_vec,aug_matrix)#compute vector of flows
-            if num_it<50:
-                if (abs(flows-lambda_vec)>10e-4).any(): #check on convergence
-                    lambda_vec=flows
-                    num_it+=1
-                else:
-                    iterate=False
-                    flows=np.array([max(0,i) for i in flows])
-            else:
-                if num_it <10000:
-                    if (abs(flows-lambda_vec)>10e-3).any(): #check on convergence
-                        lambda_vec=flows
-                        num_it+=1
-                    else:
-                        iterate=False
-                        flows=np.array([max(0,i) for i in flows])
-                else:
-                    iterate=False
-                    flows=np.array([])
-        return flows, aug_matrix
+        return city_grid_data, city_grid_CS_data, aug_OD_matrix, zone_throughput
 
     def MS_MVA(self, flows, n_vehicles):
         n_queues=flows.size
@@ -363,3 +271,249 @@ class Network():
                     iterate=False
                     flows=np.array([])
         return flows, aug_matrix
+
+    def total_fluxes(self):
+        aug_matrix=np.zeros((self.n_zones+self.n_charging_stations,self.n_zones+self.n_charging_stations))
+        aug_matrix[0:self.n_zones,0:self.n_zones]=self.OD_matrix
+        #define only element in the CS row equal to one corresponding to its zone
+        for j in range(self.n_charging_stations):
+            aug_matrix[self.n_zones+j][self.zones_with_charging_stations[j]]=1
+        lambda_vec=np.random.rand(self.n_charging_stations+self.n_zones)
+        lambda_vec=lambda_vec/(np.sum(lambda_vec))
+        num_it=0
+        k=1/self.trips_autonomy
+        #ITERATE TO FIND FLOWS AT STEADY STATE
+        iterate=True
+        while iterate:
+            flows=np.dot(lambda_vec,aug_matrix)#compute vector of flows
+            tot_CS_flows=0
+            for i in self.zones_with_charging_stations:
+                tot_CS_flows+=flows[i]
+            tot_flows=np.sum(flows)
+            k=(1/self.trips_autonomy)/(tot_CS_flows/tot_flows)
+            if k>=1:
+                k=0.99
+                "K clipped"
+            if self.n_charging_stations>0:
+                #COMPUTE CHARGING FLOWS FOR EACH ZONE WITH CURRENT NETWORK FLOWS 
+                for i in range(len(self.zones_with_charging_stations)):
+                    #correct OD matrix with k
+                    aug_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]=self.OD_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]*(1-k)
+                    aug_matrix[0:self.n_zones,self.n_zones+i]=self.OD_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]*k
+            aug_matrix=aug_matrix/aug_matrix.sum(axis=1)[:,None]    
+            if num_it<50:
+                if (abs(flows-lambda_vec)>10e-4).any(): #check on convergence
+                    lambda_vec=flows
+                    num_it+=1
+                else:
+                    iterate=False
+                    flows=np.array([max(0,i) for i in flows])
+            else:
+                if num_it <10000:
+                    if (abs(flows-lambda_vec)>10e-3).any(): #check on convergence
+                        lambda_vec=flows
+                        num_it+=1
+                    else:
+                        iterate=False
+                        flows=np.array([max(0,i) for i in flows])
+                else:
+                    iterate=False
+                    flows=np.array([]) 
+        return flows, aug_matrix
+
+    def fluxes_with_reloc4charg_old(self):
+        aug_matrix=np.zeros((self.n_zones+self.n_charging_stations,self.n_zones+self.n_charging_stations))
+        aug_matrix[0:self.n_zones,0:self.n_zones]=self.OD_matrix
+        zones_list=list(np.arange(0,self.n_zones))
+        zones_without_CS=[zone for zone in zones_list if zone not in self.zones_with_charging_stations]
+        #define only element in the CS row equal to one corresponding to its zone
+        for j in range(self.n_charging_stations):
+            aug_matrix[self.n_zones+j][self.zones_with_charging_stations[j]]=1
+        lambda_vec=np.random.rand(self.n_charging_stations+self.n_zones)
+        lambda_vec=lambda_vec/(np.sum(lambda_vec))
+        num_it=0
+        k=1/self.trips_autonomy
+        if self.n_charging_stations>0:
+            #redirect flow from each zone to CS
+            if self.charging_policy=='closest_CS':
+                closest_CS_ids=self.find_closest_CS()
+                inv_zones_id_dict = {v: k for k, v in self.zones_id_dict.items()}
+                closest_CS_od=[inv_zones_id_dict[i] for i in closest_CS_ids]
+                self.zones_with_charging_stations=np.array(self.zones_with_charging_stations)
+                for i in range(self.n_zones):
+                    aug_matrix[0:self.n_zones,self.n_zones+(np.where(self.zones_with_charging_stations==closest_CS_od[i])[0].item())]+=self.OD_matrix[0:self.n_zones,i]*k
+            else: #uniform relocation
+                for i in range(len(self.zones_with_charging_stations)):
+                    #correct OD matrix with k
+                    #fluxes directed to the zone with CS inside
+                    aug_matrix[0:self.n_zones,self.n_zones+i]=self.OD_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]*k
+                    for j in range(len(zones_without_CS)):
+                        #fluxes directed to zones WITHOUT CS inside
+                        aug_matrix[0:self.n_zones,self.n_zones+i]=aug_matrix[0:self.n_zones,self.n_zones+i]+self.OD_matrix[0:self.n_zones,zones_without_CS[j]]*(k/self.n_charging_stations)
+            #for both each mobility zone times (1-k)
+            aug_matrix[0:self.n_zones,0:self.n_zones]=self.OD_matrix[0:self.n_zones,0:self.n_zones]*(1-k)        
+        #ITERATE TO FIND FLOWS AT STEADY STATE
+        iterate=True
+        while iterate:
+            flows=np.dot(lambda_vec,aug_matrix)#compute vector of flows
+            if num_it<50:
+                if (abs(flows-lambda_vec)>10e-4).any(): #check on convergence
+                    lambda_vec=flows
+                    num_it+=1
+                else:
+                    iterate=False
+                    flows=np.array([max(0,i) for i in flows])
+            else:
+                if num_it <10000:
+                    if (abs(flows-lambda_vec)>10e-3).any(): #check on convergence
+                        lambda_vec=flows
+                        num_it+=1
+                    else:
+                        iterate=False
+                        flows=np.array([max(0,i) for i in flows])
+                else:
+                    iterate=False
+                    flows=np.array([])
+        return flows, aug_matrix
+
+    def fluxes_with_reloc4charg_del(self):
+        """
+        np.random.seed(32)
+        self.n_zones=4
+        self.n_charging_stations=2
+        self.OD_matrix=np.random.rand(self.n_zones,self.n_zones)
+        self.OD_matrix=self.OD_matrix/self.OD_matrix.sum(axis=1)[:,None]
+        self.zones_with_charging_stations=[0,2]
+        print("OD: ",self.OD_matrix)
+        """
+        aug_matrix=np.zeros((self.n_zones+self.n_charging_stations,self.n_zones+self.n_charging_stations))
+        aug_matrix[0:self.n_zones,0:self.n_zones]=self.OD_matrix
+        zones_list=list(np.arange(0,self.n_zones))
+        zones_without_CS=[zone for zone in zones_list if zone not in self.zones_with_charging_stations]
+        lambda_vec=np.random.rand(self.n_charging_stations+self.n_zones*2)
+        lambda_vec=lambda_vec/(np.sum(lambda_vec))
+        num_it=0
+        k=1/self.trips_autonomy
+        if self.n_charging_stations>0:
+            #redirect flow from each zone to CS
+            if self.charging_policy=='closest_CS':
+                closest_CS_ids=self.find_closest_CS()
+                inv_zones_id_dict = {v: k for k, v in self.zones_id_dict.items()}
+                closest_CS_od=[inv_zones_id_dict[i] for i in closest_CS_ids]
+                self.zones_with_charging_stations=np.array(self.zones_with_charging_stations)
+                for i in range(self.n_zones):
+                    aug_matrix[0:self.n_zones,self.n_zones+(np.where(self.zones_with_charging_stations==closest_CS_od[i])[0].item())]+=self.OD_matrix[0:self.n_zones,i]*k
+            elif self.charging_policy=='uniform': #uniform relocation
+                for i in range(len(self.zones_with_charging_stations)):
+                    #correct OD matrix with k
+                    #fluxes directed to the zone with CS inside
+                    aug_matrix[0:self.n_zones,self.n_zones+i]=self.OD_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]*k
+                    for j in range(len(zones_without_CS)):
+                        #fluxes directed to zones WITHOUT CS inside
+                        aug_matrix[0:self.n_zones,self.n_zones+i]=aug_matrix[0:self.n_zones,self.n_zones+i]+self.OD_matrix[0:self.n_zones,zones_without_CS[j]]*(k/self.n_charging_stations)
+            #for both each mobility zone times (1-k)
+            aug_matrix[0:self.n_zones,0:self.n_zones]=self.OD_matrix[0:self.n_zones,0:self.n_zones]*(1-k)
+            if self.reloc_after_charging=='highest_demand':
+                top_zones=self.find_top_demand_zones(self.n_top_zones)
+                for j in range(self.n_charging_stations):
+                    aug_matrix[self.n_zones+j][top_zones]=1/self.n_top_zones
+            elif self.reloc_after_charging=='uniform':
+                for j in range(self.n_charging_stations):
+                    aug_matrix[self.n_zones+j][0:self.n_zones]=1/self.n_zones
+            else:
+                #define only element in the CS row equal to one corresponding to its zone
+                for j in range(self.n_charging_stations):
+                    aug_matrix[self.n_zones+j][self.zones_with_charging_stations[j]]=1
+        #print("AUG:\n", np.round(aug_matrix,2))
+        ##ONE DELAY ZONE for each departure zone
+        delay_mat=np.zeros((self.n_zones*2+self.n_charging_stations,self.n_zones*2+self.n_charging_stations))
+        delay_mat[0:self.n_zones,self.n_zones+self.n_charging_stations:self.n_zones*2+self.n_charging_stations]=np.identity(self.n_zones)
+        delay_mat[self.n_zones+self.n_charging_stations:self.n_zones*2+self.n_charging_stations,0:self.n_zones]=aug_matrix[0:self.n_zones,0:self.n_zones]
+        delay_mat[self.n_zones+self.n_charging_stations:self.n_zones*2+self.n_charging_stations,self.n_zones:self.n_zones+self.n_charging_stations]=aug_matrix[0:self.n_zones,self.n_zones:self.n_zones+self.n_charging_stations]
+        
+        if self.reloc_after_charging=='highest_demand' or self.reloc_after_charging=='uniform':
+            #print("UNIFORM")
+            delay_mat[self.n_zones:self.n_zones+self.n_charging_stations,self.n_zones+self.n_charging_stations:self.n_zones*2+self.n_charging_stations]=aug_matrix[self.n_zones:self.n_zones+self.n_charging_stations,0:self.n_zones]
+            for j in range(len(self.zones_with_charging_stations)):
+                to_same_zone=delay_mat[self.n_zones+j,self.n_zones+self.n_charging_stations+self.zones_with_charging_stations[j]]
+                delay_mat[self.n_zones+j,self.n_zones+self.n_charging_stations+self.zones_with_charging_stations[j]]=0
+                delay_mat[self.n_zones+j,self.zones_with_charging_stations[j]]=to_same_zone
+        else:
+            delay_mat[self.n_zones:self.n_zones+self.n_charging_stations,0:self.n_zones]=aug_matrix[self.n_zones:self.n_zones+self.n_charging_stations,0:self.n_zones]
+        #print("DELAY:\n", np.round(delay_mat,2))
+        #ITERATE TO FIND FLOWS AT STEADY STATE
+        iterate=True
+        while iterate:
+            flows=np.dot(lambda_vec,delay_mat)#compute vector of flows
+            #print(np.round(flows,2))
+            #print("DEL:\n", np.round(delay_mat,2))
+            if self.charging_policy=='opportunistic':
+                tot_CS_flows=0
+                for i in self.zones_with_charging_stations:
+                    tot_CS_flows+=flows[i]
+                tot_flows=np.sum(flows)
+                k=(1/self.trips_autonomy)/(tot_CS_flows/tot_flows)
+                if k>=1:
+                    k=0.99
+                    "K clipped"
+                if self.n_charging_stations>0:
+                    #COMPUTE CHARGING FLOWS FOR EACH ZONE WITH CURRENT NETWORK FLOWS 
+                    for i in range(len(self.zones_with_charging_stations)):
+                        #correct OD matrix with k
+                        delay_mat[self.n_zones+self.n_charging_stations:self.n_zones*2+self.n_charging_stations,self.zones_with_charging_stations[i]]=self.OD_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]*(1-k)
+                        delay_mat[self.n_zones+self.n_charging_stations:self.n_zones*2+self.n_charging_stations,self.n_zones+i]=self.OD_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]*k
+                        #aug_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]=self.OD_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]*(1-k)
+                        #aug_matrix[0:self.n_zones,self.n_zones+i]=self.OD_matrix[0:self.n_zones,self.zones_with_charging_stations[i]]*k
+                delay_mat=delay_mat/delay_mat.sum(axis=1)[:,None]
+                #aug_matrix=aug_matrix/aug_matrix.sum(axis=1)[:,None]    
+            if num_it<50:
+                if (abs(flows-lambda_vec)>10e-4).any(): #check on convergence
+                    lambda_vec=flows
+                    num_it+=1
+                else:
+                    iterate=False
+                    flows=np.array([max(0,i) for i in flows])
+            else:
+                if num_it <10000:
+                    if (abs(flows-lambda_vec)>10e-3).any(): #check on convergence
+                        lambda_vec=flows
+                        num_it+=1
+                    else:
+                        iterate=False
+                        flows=np.array([max(0,i) for i in flows])
+                else:
+                    iterate=False
+                    flows=np.array([])
+        return flows, delay_mat
+
+    def MS_MVA_inf_mult(self, flows, n_vehicles):
+        n_queues=flows.size
+        #flows=np.append(flows,np.sum(flows[0:self.n_zones]))
+        #n_queues=self.n_zones+self.n_charging_stations
+        #Multi servers Mean Value Analysis (MS-MVA)
+        average_vehicles=np.zeros((n_queues,n_vehicles+1)) #average number of vehicles per zone
+        average_waiting=np.zeros((n_queues,n_vehicles+1)) #average "waiting time" of vehicles per zone
+        max_ns=int(np.max(self.n_servers))
+        p=np.zeros((n_queues,max_ns,n_vehicles+1))
+        p[:,0,0]=1
+        for m in range(1,n_vehicles+1):
+            for n in range(self.n_zones+self.n_charging_stations):
+                ns=int(self.n_servers[n])
+                correction_factor=0
+                for j in range(1,ns):
+                    correction_factor+=(ns-j)*p[n,j-1,m-1]
+                average_waiting[n,m]=(1+average_vehicles[n,m-1]+correction_factor)/(self.service_rates[n]*ns)
+            average_waiting[self.n_zones+self.n_charging_stations:n_queues-1,m]=1/self.service_rates[n_queues-1] #of delay queues
+            overall_throughput=m/np.sum(np.multiply(average_waiting[:,m],flows))
+            average_vehicles[:,m]=np.multiply(flows*overall_throughput,average_waiting[:,m])
+            for n in range (self.n_zones+self.n_charging_stations):
+                ns=int(self.n_servers[n])
+                su=0
+                for j in range(1,ns):
+                    p[n,j,m]=(1/j)*(flows[n]/(self.service_rates[n]*ns))*overall_throughput*p[n,j-1,m-1]
+                    su+=(ns-j)*p[n,j,m]
+                p[n,0,m]=1-(1/ns)*(flows[n]/(self.service_rates[n]*ns)*overall_throughput+su)
+            p[self.n_zones+self.n_charging_stations:n_queues-1,0,m]=1 #delay queue
+        return average_vehicles[:,-1], average_waiting[:,-1], overall_throughput
+
+    

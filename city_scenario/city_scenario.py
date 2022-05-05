@@ -1,6 +1,8 @@
 import json
 import pandas as pd
 import numpy as np
+import geopandas as gpd
+from shapely.geometry import Polygon, LineString, Point
 
 class Scenario:
     def __init__(self, scenario_conf):
@@ -16,6 +18,7 @@ class Scenario:
         self.charging_policy=self.scenario['charging_policy']
         self.reloc_after_charging=self.scenario['reloc_after_charging']
         self.n_top_zones=self.scenario['n_top_zones']
+        self.n_vehicles=self.scenario["n_vehicles"]
         #data
         self.bookings_df=pd.read_csv("trips_with_zone_id.csv")
         try:
@@ -128,14 +131,20 @@ class Scenario:
         service_rates[self.n_zones:self.n_zones+self.n_charging_stations]=(np.ones(self.n_charging_stations)*self.outlet_rate)
         n_servers=np.ones(self.n_zones+self.n_charging_stations)
         n_servers[self.n_zones:self.n_zones+self.n_charging_stations]=np.ones(self.n_charging_stations)*self.scenario["outlet_per_stations"]
-        if self.delay_queue:
-            service_rates=np.append(service_rates,self.delay_rate)
+        if self.delay_queue=='single':
+            av_trips_time=np.mean(self.trips_time_per_zone())
+            service_rates=np.append(service_rates,1/av_trips_time)
+        elif self.delay_queue=='multiple':
+            trips_time=self.trips_time_per_zone()
+            new_sr=1/(trips_time)
+            #new_sr=np.ones(self.n_zones)*self.delay_rate
+            service_rates=np.append(service_rates,new_sr)
         return n_servers, service_rates
     
     def print_scenario(self):
         print("Number of zones: ", self.n_zones)
         print("Number of charging stations: ", self.n_charging_stations)
-        if self.delay_queue:
+        if self.delay_queue=='single':
             print("Delay zone included with rate: ", self.delay_rate)
         print("Trips autonomy: ", np.round(self.trips_autonomy,2))
         print(f"Distance autonomy: {np.round(self.dist_autonomy,2)} km")
@@ -149,3 +158,32 @@ class Scenario:
         with open(self.json_file, "w") as jsonFile:
             json.dump(self.scenario, jsonFile, indent=1)
         self.__init__(self.json_file)
+
+    def average_dist(self):
+        dist_matr=np.zeros((self.n_zones, self.n_zones))
+        city_grid_3035=self.city_grid.to_crs(epsg=3035)
+        city_centroids=city_grid_3035.centroid
+        mat_id=0
+        for zone in city_centroids:
+            #print(city_centroids.distance(zone))
+            dist_matr[mat_id,:]=city_centroids.distance(zone)
+            mat_id+=1
+        return dist_matr
+
+    def average_speed(self):
+        av_speed=np.divide(self.bookings_df.distance/1000,self.bookings_df.duration/3600)
+        return np.mean(av_speed)
+
+    def trips_time_per_zone(self):
+        distance_matrix=self.average_dist()
+        avg_dist_per_zone=np.zeros(self.n_zones)
+        for zone in range(self.n_zones):
+            avg_dist_per_zone[zone]=np.sum(np.multiply(self.OD_matrix[zone,:],distance_matrix[zone,:]))/1000
+        #print(avg_dist_per_zone)
+        av_speed=self.average_speed()
+        av_trips_time=avg_dist_per_zone/av_speed
+        #print(av_trips_time*60)
+        #inv_zones_id_dict = {v: k for k, v in self.zones_id_dict.items()}
+        #print(av_trips_time[inv_zones_id_dict[200]]*60)
+        return av_trips_time
+        
