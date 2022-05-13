@@ -39,20 +39,22 @@ class Network():
             #print("F sum: ", np.sum(flows))
             ## MS_MVA - Multi-Server Mean Value Analysis of the network
             if self.city_scenario.delay_queue=="single":
-                av_vehicles, av_delay, ov_throughput=self.MS_MVA_inf(flows, self.n_vehicles)
-                print("Av vehicles in D: ", av_vehicles[self.n_zones+self.n_charging_stations])
+                self.av_vehicles, self.av_delay, ov_throughput=self.MS_MVA_inf(flows, self.n_vehicles)
+                print("Av vehicles in D: ", self.av_vehicles[self.n_zones+self.n_charging_stations])
+                print("Av time in D: ", self.av_delay[self.n_zones+self.n_charging_stations])
             elif self.city_scenario.delay_queue=="multiple":
-                av_vehicles, av_delay, ov_throughput=self.MS_MVA_inf_mult(flows, self.n_vehicles)
-                print("Av vehicles in Ds:", np.sum(av_vehicles[self.n_zones+self.n_charging_stations:self.n_zones*2+self.n_charging_stations]))
+                self.av_vehicles, self.av_delay, ov_throughput=self.MS_MVA_inf_mult(flows, self.n_vehicles)
+                print("Av vehicles in Ds:", np.sum(self.av_vehicles[self.n_zones+self.n_charging_stations:self.n_zones*2+self.n_charging_stations]))
+                print("Av time in Ds:", np.sum(self.av_delay[self.n_zones+self.n_charging_stations:self.n_zones*2+self.n_charging_stations])/self.n_zones)
             else:
-                av_vehicles, av_delay, ov_throughput=self.MS_MVA(flows, self.n_vehicles)
+                self.av_vehicles, self.av_delay, ov_throughput=self.MS_MVA(flows, self.n_vehicles)
                 print("NO DELAY")
             throughput_vector=ov_throughput*flows
             #print("TOTOT: ", np.sum(throughput_vector))
             #print("MVA OV:", ov_throughput)
             zone_throughput=np.sum(throughput_vector[0:self.n_zones])
             #print("ov throughput zones+CS only: ", zone_throughput)
-            av_waiting=av_delay-(1/self.service_rates)
+            av_waiting=self.av_delay-(1/self.service_rates)
             #compute utilization vector (rho) with computed flows and service rates
             rho=np.divide(throughput_vector[0:self.n_zones+self.n_charging_stations],np.multiply(self.service_rates[0:self.n_zones+self.n_charging_stations],self.n_servers))
             #Compute unsatisfied demand and mobility requests for mobility zones only
@@ -73,10 +75,10 @@ class Network():
             city_grid_CS_data['flows']=flows[self.n_zones:self.n_zones+self.n_charging_stations]
             city_grid_data['throughput']=throughput_vector[0:self.n_zones]
             city_grid_CS_data['throughput']=throughput_vector[self.n_zones:self.n_zones+self.n_charging_stations]
-            city_grid_data['av_vehicles']=av_vehicles[0:self.n_zones]
-            city_grid_CS_data['av_vehicles']=av_vehicles[self.n_zones:self.n_zones+self.n_charging_stations]
-            city_grid_data['av_delay']=av_delay[0:self.n_zones]
-            city_grid_CS_data['av_delay']=av_delay[self.n_zones:self.n_zones+self.n_charging_stations]
+            city_grid_data['av_vehicles']=self.av_vehicles[0:self.n_zones]
+            city_grid_CS_data['av_vehicles']=self.av_vehicles[self.n_zones:self.n_zones+self.n_charging_stations]
+            city_grid_data['av_delay']=self.av_delay[0:self.n_zones]
+            city_grid_CS_data['av_delay']=self.av_delay[self.n_zones:self.n_zones+self.n_charging_stations]
             city_grid_CS_data['av_waiting']=av_waiting[self.n_zones:self.n_zones+self.n_charging_stations]
             city_grid_data['utilization']=rho[0:self.n_zones]
             city_grid_CS_data['utilization']=rho[self.n_zones:self.n_zones+self.n_charging_stations]
@@ -228,6 +230,11 @@ class Network():
             elif self.reloc_after_charging=='uniform':
                 for j in range(self.n_charging_stations):
                     aug_matrix[self.n_zones+j][0:self.n_zones]=1/self.n_zones
+            elif self.reloc_after_charging=='probabilistic':
+                norm_rates=self.service_rates[0:self.n_zones]
+                norm_rates=norm_rates/np.sum(norm_rates)
+                for j in range(self.n_charging_stations):
+                    aug_matrix[self.n_zones+j,0:self.n_zones]=norm_rates
             else:
                 #define only element in the CS row equal to one corresponding to its zone
                 for j in range(self.n_charging_stations):

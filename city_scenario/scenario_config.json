@@ -12,9 +12,9 @@
  "end_hour": 24,
  "week_day": false,
  "order_CS_position_by": "departure_per_zone",
- "delay_queue": "single",
- "av_trip_time": 15,
- "charging_policy": "opportunistic",
- "reloc_after_charging": "none",
+ "delay_queue": "false",
+ "av_trip_time": 150,
+ "charging_policy": "uniform",
+ "reloc_after_charging": "probabilistic",
  "n_top_zones": 50
 }

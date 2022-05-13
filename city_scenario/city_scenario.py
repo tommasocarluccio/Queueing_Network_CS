@@ -14,7 +14,7 @@ class Scenario:
         self.outlet_rate=self.scenario["outlet_power"]/self.battery_capacity_reduced #hourly rate of charging operation
         self.n_charging_stations=self.scenario["n_charging_stations"]
         self.delay_queue=self.scenario['delay_queue']
-        self.delay_rate=1/(self.scenario['av_trip_time']/60)
+        self.av_trip_time=self.scenario['av_trip_time']
         self.charging_policy=self.scenario['charging_policy']
         self.reloc_after_charging=self.scenario['reloc_after_charging']
         self.n_top_zones=self.scenario['n_top_zones']
@@ -132,12 +132,24 @@ class Scenario:
         n_servers=np.ones(self.n_zones+self.n_charging_stations)
         n_servers[self.n_zones:self.n_zones+self.n_charging_stations]=np.ones(self.n_charging_stations)*self.scenario["outlet_per_stations"]
         if self.delay_queue=='single':
-            av_trips_time=np.mean(self.trips_time_per_zone())
-            service_rates=np.append(service_rates,1/av_trips_time)
+            if not self.av_trip_time:
+                av_trips_time=np.mean(self.trips_time_per_zone())
+                print("Average trip time (h): ", av_trips_time)
+                self.delay_rate=1/av_trips_time
+            else:
+                self.delay_rate=1/(self.av_trip_time/60)
+                print("Average given trip time (min): ", self.av_trip_time)
+            service_rates=np.append(service_rates,self.delay_rate)
         elif self.delay_queue=='multiple':
-            trips_time=self.trips_time_per_zone()
-            new_sr=1/(trips_time)
-            #new_sr=np.ones(self.n_zones)*self.delay_rate
+            if not self.av_trip_time:
+                trips_time=self.trips_time_per_zone()
+                new_sr=1/(trips_time)
+                self.delay_rate=np.mean(trips_time)
+                print("Average trip time (h): ", self.delay_rate)
+            else:
+                self.delay_rate=1/(self.av_trip_time/60)
+                print("Average given trip time (min): ", self.av_trip_time)
+                new_sr=np.ones(self.n_zones)*(self.delay_rate) #all equal (as single delay queue)
             service_rates=np.append(service_rates,new_sr)
         return n_servers, service_rates
     
@@ -146,6 +158,8 @@ class Scenario:
         print("Number of charging stations: ", self.n_charging_stations)
         if self.delay_queue=='single':
             print("Delay zone included with rate: ", self.delay_rate)
+        elif self.delay_queue=='multiple':
+            print("Delay zones included with average rate: ", self.delay_rate)
         print("Trips autonomy: ", np.round(self.trips_autonomy,2))
         print(f"Distance autonomy: {np.round(self.dist_autonomy,2)} km")
         print(f"Charging rates: {np.round(self.outlet_rate,2)}/h")
