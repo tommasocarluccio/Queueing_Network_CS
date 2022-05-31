@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import geopandas as gpd
 from shapely.geometry import Polygon, LineString, Point
+from sklearn import neighbors
 
 class Scenario:
     def __init__(self, scenario_conf):
@@ -28,13 +29,14 @@ class Scenario:
         self.hour_of_day=np.arange(self.scenario['start_hour'],self.scenario['end_hour'])
         #from OD
         self.n_zones, self.zones_id_dict, self.OD_matrix, self.zones_service_rates, self.trips_data=self.get_hour_OD()
-        self.zones_with_charging_stations=self.place_CS_by()
+        if self.n_charging_stations!=0:
+            self.zones_with_charging_stations=self.place_CS_by()
         self.n_servers, self.service_rates=self.build_service_rate()
 
     def get_hour_OD(self):
         print("\nNumber of entries in original dataframe: ", len(self.bookings_df.index))
         #filter bookings data
-        self.bookings_df=self.bookings_df.loc[(self.bookings_df['duration']>3*60) & (self.bookings_df['duration']<60*60)]
+        self.bookings_df=self.bookings_df.loc[(self.bookings_df['duration']>3*60) & (self.bookings_df['duration']<90*60)]
         self.bookings_df=self.bookings_df.loc[self.bookings_df['distance']>500]
         print("Number of entries in dataframe (real trips): ", len(self.bookings_df.index))
         self.bookings_df['start_date'] = pd.to_datetime(self.bookings_df['init_time'],unit='s').dt.date
@@ -97,7 +99,7 @@ class Scenario:
         bookings_df_rate=bookings_df_rate.reindex(zones_id, fill_value=0.1)
         #self.zones_service_rates=np.zeros(n_zones)
         zones_service_rates=np.array(bookings_df_rate['mean_service_time'])
-
+        
         return n_zones, zones_id_dict, OD_matrix, zones_service_rates, trips_data
 
     def place_CS_by(self):
@@ -105,32 +107,42 @@ class Scenario:
         if order_by=='random':
             zones_with_charging_stations=np.sort(np.random.choice(self.n_zones,self.n_charging_stations,replace=False))    
         else:
-            ordered_df_column=self.trips_data.sort_values(by=order_by, ascending=False)[[order_by]]
-            inv_zones_id_dict = {v: k for k, v in self.zones_id_dict.items()}
+            complete=False
+            zones_with_charging_stations=[]
             #neighbors_delta=[1,-1,40,-40,39,41,-39,-41]
-            neighbors_delta=[1,-1,40,-40,39,41,-39,-41,2,-2,41,38,-41,-38,-82,-81,-80,-79,-78,78,79,80,81,82]
-            grid_with_charging_stations=[]
-            flag=0
-            for idx, row in ordered_df_column.iterrows():
-                for i in grid_with_charging_stations:
-                    if idx in [i+j for j in neighbors_delta]:
-                        flag=1
-                        break
-                if flag==0:
-                    grid_with_charging_stations.append(idx)
-                    if len(grid_with_charging_stations)==self.n_charging_stations:
-                        break
+            neighbors_delta=[1,-1,40,-40,39,41,-39,-41,2,-2,41,38,-41,-38,-82,-81,-80,-79,-78,78,79,80,81,82,42,-42]
+            #neighbors_delta=[]
+            while not complete:
+                ordered_df_column=self.trips_data.sort_values(by=order_by, ascending=False)[[order_by]]
+                inv_zones_id_dict = {v: k for k, v in self.zones_id_dict.items()}
+                grid_with_charging_stations=[]
                 flag=0
-            #print(grid_with_charging_stations)
-            zones_with_charging_stations=[inv_zones_id_dict[i] for i in grid_with_charging_stations]
+                for idx, row in ordered_df_column.iterrows():
+                    for i in grid_with_charging_stations:
+                        if idx in [i+j for j in neighbors_delta]:
+                            flag=1
+                            break
+                    if flag==0:
+                        grid_with_charging_stations.append(idx)
+                        if len(grid_with_charging_stations)==self.n_charging_stations:
+                            break
+                    flag=0
+                #print(grid_with_charging_stations)
+                zones_with_charging_stations=[inv_zones_id_dict[i] for i in grid_with_charging_stations]
+                print(len(zones_with_charging_stations))
+                if len(zones_with_charging_stations)==self.n_charging_stations:
+                    complete=True
+                else:
+                    neighbors_delta=[1,-1,40,-40,39,41,-39,-41]
         return zones_with_charging_stations
 
     def build_service_rate(self):
         service_rates=np.ones(self.n_zones+self.n_charging_stations)
         service_rates[0:self.n_zones]=self.zones_service_rates
-        service_rates[self.n_zones:self.n_zones+self.n_charging_stations]=(np.ones(self.n_charging_stations)*self.outlet_rate)
         n_servers=np.ones(self.n_zones+self.n_charging_stations)
-        n_servers[self.n_zones:self.n_zones+self.n_charging_stations]=np.ones(self.n_charging_stations)*self.scenario["outlet_per_stations"]
+        if self.n_charging_stations!=0:
+            service_rates[self.n_zones:self.n_zones+self.n_charging_stations]=(np.ones(self.n_charging_stations)*self.outlet_rate)
+            n_servers[self.n_zones:self.n_zones+self.n_charging_stations]=np.ones(self.n_charging_stations)*self.scenario["outlet_per_stations"]
         if self.delay_queue=='single':
             if not self.av_trip_time:
                 av_trips_time=np.mean(self.trips_time_per_zone())
@@ -162,9 +174,10 @@ class Scenario:
             print("Delay zones included with average rate: ", self.delay_rate)
         print("Trips autonomy: ", np.round(self.trips_autonomy,2))
         print(f"Distance autonomy: {np.round(self.dist_autonomy,2)} km")
-        print(f"Charging rates: {np.round(self.outlet_rate,2)}/h")
-        print("Zones with charging stations", self.zones_with_charging_stations)
-        print("Charging outlet per station: ", self.scenario["outlet_per_stations"])
+        if self.n_charging_stations!=0:
+            print(f"Charging rates: {np.round(self.outlet_rate,2)}/h")
+            print("Zones with charging stations", self.zones_with_charging_stations)
+            print("Charging outlet per station: ", self.scenario["outlet_per_stations"])
 
     def change_scenario_param(self, param, value):
         for i in range(len(param)):
@@ -200,4 +213,6 @@ class Scenario:
         #inv_zones_id_dict = {v: k for k, v in self.zones_id_dict.items()}
         #print(av_trips_time[inv_zones_id_dict[200]]*60)
         return av_trips_time
-        
+
+    def find_neighbors(self, grid, radius, row_number, column_number):
+        return [[grid[i][j] if  i >= 0 and i < len(grid) and j >= 0 and j < len(grid[0]) else 0 for j in range(column_number-1-radius, column_number+radius)] for i in range(row_number-1-radius, row_number+radius)]

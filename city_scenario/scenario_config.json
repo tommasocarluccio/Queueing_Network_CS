@@ -8,13 +8,13 @@
  "av_trip_length": 4,
  "outlet_power": 20,
  "outlet_per_stations": 2,
- "start_hour": 0,
- "end_hour": 24,
- "week_day": false,
+ "start_hour": 12,
+ "end_hour": 13,
+ "week_day": true,
  "order_CS_position_by": "departure_per_zone",
  "delay_queue": "false",
- "av_trip_time": 150,
+ "av_trip_time": false,
  "charging_policy": "uniform",
- "reloc_after_charging": "probabilistic",
+ "reloc_after_charging": "none",
  "n_top_zones": 50
 }
